@@ -213,12 +213,17 @@ async function checkPage(browser, pageConfig) {
     process.exit(2);
   }
   const browser = await chromium.launch({ headless: true });
-  const results = [];
+  const concurrency = Math.max(1, Math.min(config.concurrency || 1, config.pages.length));
+  const results = new Array(config.pages.length);
   try {
-    for (const pageConfig of config.pages) {
-      const result = await checkPage(browser, pageConfig);
-      results.push(result);
+    let next = 0;
+    async function worker() {
+      while (next < config.pages.length) {
+        const i = next++;
+        results[i] = await checkPage(browser, config.pages[i]);
+      }
     }
+    await Promise.all(Array.from({ length: concurrency }, worker));
   } finally {
     await browser.close();
   }
