@@ -2,3 +2,4 @@ node_modules/
 logs/
 state.json
 package-lock.json
+audit-report.json
