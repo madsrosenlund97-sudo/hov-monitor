@@ -83,8 +83,9 @@ async function checkPage(browser, pageConfig) {
     try {
       bodyText = (await page.textContent('body')) || '';
     } catch (_) {}
+    const haystack = (title + ' ' + bodyText).toLowerCase();
     for (const term of pageConfig.mustContain || []) {
-      if (!bodyText.toLowerCase().includes(term.toLowerCase())) {
+      if (!haystack.includes(term.toLowerCase())) {
         missingTerms.push(term);
       }
     }
