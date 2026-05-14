@@ -6,6 +6,8 @@
     { "path": "/vores-priser/", "mustContain": ["Prisoversigt"] },
     { "path": "/galleri/",      "mustContain": ["Galleri"] },
     { "path": "/kontakt/",      "mustContain": ["Kontakt"] },
+    { "path": "/kasse/",        "mustContain": ["Kurv"] },
+    { "path": "/en/product/premium-suit-bag/", "mustContain": ["Premium Suit Bag"] },
     { "path": "/en/",           "mustContain": ["Tailored menswear"] }
   ],
   "timeoutMs": 25000,
