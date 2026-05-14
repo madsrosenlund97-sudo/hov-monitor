@@ -3,7 +3,7 @@
   "pages": [
     {
       "path": "/",
-      "mustContain": ["Vinterberg", "_HOV_MONITOR_E2E_TEST_STRING_DELETE_ME_"]
+      "mustContain": ["Vinterberg"]
     }
   ],
   "timeoutMs": 25000,
