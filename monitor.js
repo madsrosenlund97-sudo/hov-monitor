@@ -21,36 +21,49 @@ async function checkPage(browser, pageConfig) {
   });
   const page = await context.newPage();
 
-  const consoleErrors = [];
-  const failedRequests = [];
-  const serverErrors = [];
+  const jsErrors = [];           // real JS exceptions (not resource load failures)
+  const firstPartyHttpErrors = []; // 4xx + 5xx subrequest responses from our own domain
+  const thirdPartyServerErrors = []; // 5xx only from third parties (4xx is usually noise)
+  const networkFailures = [];    // ERR_FAILED, ERR_NAME_NOT_RESOLVED etc - NOT ERR_ABORTED
+  const siteOrigin = new URL(config.site).origin;
+
+  // Browser noise message ("Failed to load resource: 404") - we already capture
+  // the real URL + status via the response handler, so ignore this redundant signal.
+  const RESOURCE_LOAD_NOISE = /Failed to load resource:/i;
 
   page.on('console', (msg) => {
-    if (msg.type() === 'error') {
-      const text = msg.text();
-      if (!shouldIgnoreConsole(text)) consoleErrors.push(text);
-    }
+    if (msg.type() !== 'error') return;
+    const text = msg.text();
+    if (RESOURCE_LOAD_NOISE.test(text)) return;
+    if (shouldIgnoreConsole(text)) return;
+    jsErrors.push(text);
   });
 
   page.on('pageerror', (err) => {
     const text = err.message || String(err);
-    if (!shouldIgnoreConsole(text)) consoleErrors.push('pageerror: ' + text);
+    if (!shouldIgnoreConsole(text)) jsErrors.push('uncaught: ' + text);
   });
 
   page.on('requestfailed', (req) => {
     const url = req.url();
     if (shouldIgnoreConsole(url)) return;
-    failedRequests.push({
-      url,
-      reason: req.failure() ? req.failure().errorText : 'unknown',
-    });
+    const reason = req.failure() ? req.failure().errorText : 'unknown';
+    // ERR_ABORTED is almost always Playwright tearing down the page while
+    // background trackers are still firing - it is not a site bug.
+    if (reason === 'net::ERR_ABORTED') return;
+    networkFailures.push({ url, reason });
   });
 
   page.on('response', (resp) => {
     const status = resp.status();
     const url = resp.url();
-    if (status >= 500 && !shouldIgnoreConsole(url)) {
-      serverErrors.push({ url, status });
+    if (status < 400) return;
+    if (shouldIgnoreConsole(url)) return;
+    const isFirstParty = url.startsWith(siteOrigin);
+    if (isFirstParty) {
+      firstPartyHttpErrors.push({ url, status });
+    } else if (status >= 500) {
+      thirdPartyServerErrors.push({ url, status });
     }
   });
 
@@ -93,6 +106,10 @@ async function checkPage(browser, pageConfig) {
 
   await context.close();
 
+  function shortUrl(u) {
+    return u.length > 110 ? u.slice(0, 107) + '...' : u;
+  }
+
   const problems = [];
   if (navError) problems.push('Navigation fejlede: ' + navError);
   if (status !== null && status >= 400)
@@ -107,24 +124,39 @@ async function checkPage(browser, pageConfig) {
     );
   if (missingTerms.length)
     problems.push('Manglende indhold paa siden: ' + missingTerms.join(', '));
-  if (consoleErrors.length)
+  if (firstPartyHttpErrors.length) {
+    const sample = firstPartyHttpErrors
+      .slice(0, 3)
+      .map((e) => e.status + ' ' + shortUrl(e.url))
+      .join(' | ');
     problems.push(
-      'JS console errors (' +
-        consoleErrors.length +
-        '): ' +
-        consoleErrors.slice(0, 3).join(' | ')
+      firstPartyHttpErrors.length +
+        ' fejlede subrequests fra siden selv: ' +
+        sample
     );
-  if (serverErrors.length)
+  }
+  if (thirdPartyServerErrors.length) {
+    const sample = thirdPartyServerErrors
+      .slice(0, 2)
+      .map((e) => e.status + ' ' + shortUrl(e.url))
+      .join(' | ');
     problems.push(
-      serverErrors.length +
-        ' 5xx-svar fra subrequests (' +
-        serverErrors[0].status +
-        ' ' +
-        serverErrors[0].url +
-        ')'
+      thirdPartyServerErrors.length + ' 5xx fra tredjepart: ' + sample
     );
-  if (failedRequests.length > 3)
-    problems.push(failedRequests.length + ' fejlede netvaerks-requests');
+  }
+  if (jsErrors.length)
+    problems.push(
+      'JS-fejl (' + jsErrors.length + '): ' + jsErrors.slice(0, 3).join(' | ')
+    );
+  if (networkFailures.length > 3)
+    problems.push(
+      networkFailures.length +
+        ' netvaerksfejl (ikke-aborted): ' +
+        networkFailures
+          .slice(0, 2)
+          .map((f) => f.reason + ' ' + shortUrl(f.url))
+          .join(' | ')
+    );
 
   return {
     url,
@@ -133,9 +165,10 @@ async function checkPage(browser, pageConfig) {
     title,
     loadMs,
     problems,
-    consoleErrors: consoleErrors.slice(0, 5),
-    failedRequests: failedRequests.slice(0, 5),
-    serverErrors: serverErrors.slice(0, 5),
+    jsErrors: jsErrors.slice(0, 5),
+    firstPartyHttpErrors: firstPartyHttpErrors.slice(0, 10),
+    thirdPartyServerErrors: thirdPartyServerErrors.slice(0, 5),
+    networkFailures: networkFailures.slice(0, 5),
     navError,
   };
 }
