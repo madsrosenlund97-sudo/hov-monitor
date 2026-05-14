@@ -42,6 +42,13 @@ function pickSample(arr, n) {
   return out;
 }
 
+// Paths that are intentionally ignored - e.g. pages drafted/scheduled for removal
+// that still show up in the sitemap. Substring match on the URL.
+const EXCLUDED_PATHS = [
+  '/galleri/',     // DK gallery - drafted, slated for removal
+  '/en/gallery/',  // EN gallery - to be drafted, slated for removal
+];
+
 async function buildUrlList(opts) {
   const index = await fetchUrls(SITE + '/sitemap_index.xml');
   const subUrls = {};
@@ -73,7 +80,9 @@ async function buildUrlList(opts) {
     pickSample(allProducts, 20).forEach((u) => urls.add(u));
   }
 
-  let list = [...urls];
+  let list = [...urls].filter(
+    (u) => !EXCLUDED_PATHS.some((p) => u.includes(p))
+  );
   if (opts.only) {
     const filters = opts.only.split(',');
     list = list.filter((u) => filters.some((f) => u.includes(f)));
