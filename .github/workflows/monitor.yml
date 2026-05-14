@@ -1,0 +1,93 @@
+name: HOV Monitor
+
+on:
+  schedule:
+    - cron: '*/5 * * * *'   # every 5 min (best-effort; GH can delay 1-15 min during peak)
+  workflow_dispatch:         # manual trigger from Actions tab
+    inputs:
+      simulate_fail:
+        description: 'Simulate a failure to test alerts'
+        required: false
+        default: 'false'
+
+permissions:
+  contents: read
+
+concurrency:
+  group: hov-monitor
+  cancel-in-progress: false
+
+jobs:
+  check:
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '20'
+
+      - name: Install npm deps
+        run: npm install --no-audit --no-fund
+
+      - name: Cache Playwright Chromium
+        id: playwright-cache
+        uses: actions/cache@v4
+        with:
+          path: ~/.cache/ms-playwright
+          key: playwright-chromium-${{ hashFiles('package.json') }}
+          restore-keys: playwright-chromium-
+
+      - name: Install Playwright Chromium
+        run: npx playwright install --with-deps chromium
+
+      - name: Restore monitor state
+        uses: actions/cache/restore@v4
+        with:
+          path: state.json
+          key: hov-monitor-state-${{ github.run_id }}
+          restore-keys: hov-monitor-state-
+
+      - name: Run monitor
+        id: monitor
+        continue-on-error: true
+        run: |
+          if [ "${{ github.event.inputs.simulate_fail }}" = "true" ]; then
+            node monitor.js --simulate-fail > result.json
+          else
+            node monitor.js > result.json
+          fi
+
+      - name: Print monitor result
+        run: cat result.json
+
+      - name: Notify
+        env:
+          ALERT_COOLDOWN_MIN: '30'
+          PUSHOVER_USER:       ${{ secrets.PUSHOVER_USER }}
+          PUSHOVER_TOKEN:      ${{ secrets.PUSHOVER_TOKEN }}
+          PUSHOVER_PRIORITY:   ${{ secrets.PUSHOVER_PRIORITY }}
+          TELEGRAM_BOT_TOKEN:  ${{ secrets.TELEGRAM_BOT_TOKEN }}
+          TELEGRAM_CHAT_ID:    ${{ secrets.TELEGRAM_CHAT_ID }}
+          TWILIO_ACCOUNT_SID:  ${{ secrets.TWILIO_ACCOUNT_SID }}
+          TWILIO_AUTH_TOKEN:   ${{ secrets.TWILIO_AUTH_TOKEN }}
+          TWILIO_FROM:         ${{ secrets.TWILIO_FROM }}
+          TWILIO_TO:           ${{ secrets.TWILIO_TO }}
+          SLACK_WEBHOOK_URL:   ${{ secrets.SLACK_WEBHOOK_URL }}
+          DISCORD_WEBHOOK_URL: ${{ secrets.DISCORD_WEBHOOK_URL }}
+          GENERIC_WEBHOOK_URL: ${{ secrets.GENERIC_WEBHOOK_URL }}
+        run: node notify.js
+
+      - name: Save monitor state
+        if: always()
+        uses: actions/cache/save@v4
+        with:
+          path: state.json
+          key: hov-monitor-state-${{ github.run_id }}
+
+      - name: Fail the run if monitor failed
+        if: steps.monitor.outcome != 'success'
+        run: |
+          echo "Monitor reported a frontend problem. See result.json above."
+          exit 1

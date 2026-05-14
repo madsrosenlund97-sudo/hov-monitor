@@ -1,0 +1,13 @@
+{
+  "name": "hov-monitor",
+  "version": "1.0.0",
+  "private": true,
+  "description": "Frontend monitor for houseofvinterberg.com",
+  "scripts": {
+    "check": "node monitor.js",
+    "test-alert": "node monitor.js --simulate-fail"
+  },
+  "dependencies": {
+    "playwright": "^1.49.0"
+  }
+}

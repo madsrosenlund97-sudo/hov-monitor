@@ -1,0 +1,25 @@
+{
+  "site": "https://houseofvinterberg.com",
+  "pages": [
+    {
+      "path": "/",
+      "mustContain": ["Vinterberg"]
+    }
+  ],
+  "timeoutMs": 25000,
+  "maxLoadMs": 15000,
+  "userAgent": "Mozilla/5.0 (HOV-Monitor; +https://houseofvinterberg.com) AppleWebKit/537.36",
+  "ignoredConsoleErrors": [
+    "favicon",
+    "gtag",
+    "google-analytics",
+    "googletagmanager",
+    "facebook.net",
+    "hotjar",
+    "klaviyo",
+    "robots.txt"
+  ],
+  "alertCooldownMinutes": 30,
+  "slackWebhookUrl": "",
+  "emailWebhookUrl": ""
+}
