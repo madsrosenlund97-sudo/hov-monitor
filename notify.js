@@ -34,15 +34,38 @@ if (!result) {
   process.exit(0);
 }
 
-const state = readJson(STATE_PATH, { lastStatus: 'unknown', lastAlertTime: null });
+const state = readJson(STATE_PATH, {
+  lastStatus: 'unknown',
+  lastAlertTime: null,
+  failStreak: 0,
+  alerted: false,
+});
 const now = new Date();
 const currentStatus = result.ok ? 'ok' : 'fail';
+
+// Read minFailStreakForAlert from config (default 1 = legacy behaviour)
+const MIN_FAIL_STREAK = (() => {
+  try {
+    const cfgPath = require('path').join(__dirname, 'config.json');
+    const cfg = JSON.parse(require('fs').readFileSync(cfgPath, 'utf8'));
+    return Math.max(1, parseInt(cfg.minFailStreakForAlert || 1, 10));
+  } catch (_) {
+    return 1;
+  }
+})();
+
+// Track consecutive-fail streak. Used to suppress alerts for transient flakes
+// (e.g. Elementor lazy-regen 404s that resolve on the next run).
+const newFailStreak = currentStatus === 'fail' ? (state.failStreak || 0) + 1 : 0;
 
 let shouldAlert = false;
 let kind = '';
 
 if (currentStatus === 'fail') {
-  if (state.lastStatus !== 'fail') {
+  // Wait for streak to reach threshold before firing first alert.
+  if (newFailStreak < MIN_FAIL_STREAK) {
+    // Quietly accumulate - no push yet.
+  } else if (!state.alerted) {
     shouldAlert = true;
     kind = 'down';
   } else if (state.lastAlertTime) {
@@ -55,7 +78,7 @@ if (currentStatus === 'fail') {
     shouldAlert = true;
     kind = 'still-down';
   }
-} else if (currentStatus === 'ok' && state.lastStatus === 'fail') {
+} else if (currentStatus === 'ok' && state.alerted) {
   shouldAlert = true;
   kind = 'recovered';
 }
@@ -198,10 +221,27 @@ const channels = {
       );
     }
     state.lastAlertTime = now.toISOString();
-    report = { alerted: true, kind, title, sent, failed };
+    report = { alerted: true, kind, title, sent, failed, failStreak: newFailStreak };
+  } else {
+    report = {
+      alerted: false,
+      status: currentStatus,
+      failStreak: newFailStreak,
+      minFailStreakForAlert: MIN_FAIL_STREAK,
+      note:
+        currentStatus === 'fail' && newFailStreak < MIN_FAIL_STREAK
+          ? 'Suppressing alert (failStreak ' + newFailStreak + ' < threshold ' + MIN_FAIL_STREAK + ')'
+          : undefined,
+    };
   }
 
+  // Track whether we've notified the user about this incident, so a recovery
+  // alert fires only if we actually told them something was wrong.
+  if (kind === 'down') state.alerted = true;
+  if (kind === 'recovered') state.alerted = false;
+
   state.lastStatus = currentStatus;
+  state.failStreak = newFailStreak;
   fs.writeFileSync(STATE_PATH, JSON.stringify(state, null, 2));
   console.log(JSON.stringify(report, null, 2));
 })().catch((err) => {

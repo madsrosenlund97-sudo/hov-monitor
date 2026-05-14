@@ -20,9 +20,10 @@
     { "path": "/en/wardrobe/",                  "mustContain": ["Wardrobe"] },
     { "path": "/en/product/premium-suit-bag/",  "mustContain": ["Premium Suit Bag"] }
   ],
-  "concurrency": 5,
-  "timeoutMs": 25000,
-  "maxLoadMs": 15000,
+  "concurrency": 1,
+  "minFailStreakForAlert": 2,
+  "timeoutMs": 30000,
+  "maxLoadMs": 20000,
   "userAgent": "Mozilla/5.0 (HOV-Monitor; +https://houseofvinterberg.com) AppleWebKit/537.36",
   "ignoredConsoleErrors": [
     "favicon",
