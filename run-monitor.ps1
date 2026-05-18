@@ -6,6 +6,11 @@ $logDir    = Join-Path $scriptDir 'logs'
 $stateFile = Join-Path $scriptDir 'state.json'
 $configFile = Join-Path $scriptDir 'config.json'
 
+# Use project-local browser folder so the scheduled-task context (which can't
+# see %LOCALAPPDATA%\ms-playwright due to a Windows session-virtualisation
+# quirk on this machine) finds the chromium binary.
+$env:PLAYWRIGHT_BROWSERS_PATH = Join-Path $scriptDir '.playwright-browsers'
+
 if (-not (Test-Path $logDir)) { New-Item -ItemType Directory -Path $logDir -Force | Out-Null }
 
 $timestamp = Get-Date -Format 'yyyy-MM-dd HH:mm:ss'
@@ -145,6 +150,74 @@ if ($currentStatus -eq 'fail') {
 }
 $state.lastStatus = $currentStatus
 $state | ConvertTo-Json | Out-File -FilePath $stateFile -Encoding utf8
+
+# Daily sync: scrape Amelia bookings, enrich with MTM orders, deploy to Netlify.
+# Runs once per day, the first time the scheduled task fires at/after DAILY_SYNC_HOUR.
+$lastSyncFile = Join-Path $scriptDir 'last-daily-sync.txt'
+$today = Get-Date -Format 'yyyy-MM-dd'
+$lastSync = if (Test-Path $lastSyncFile) { (Get-Content $lastSyncFile -Raw).Trim() } else { '' }
+
+# Load .env for NETLIFY_AUTH_TOKEN, NETLIFY_SITE_ID, DAILY_SYNC_HOUR
+$envFile = Join-Path $scriptDir '.env'
+$dailySyncHour = 7
+$netlifyToken = ''
+$netlifySiteId = ''
+if (Test-Path $envFile) {
+    Get-Content $envFile -Encoding utf8 | ForEach-Object {
+        if ($_ -match '^\s*([A-Za-z_][A-Za-z0-9_]*)\s*=\s*(.*)$') {
+            $k = $matches[1]; $v = $matches[2].Trim()
+            if ($v.StartsWith('"') -and $v.EndsWith('"')) { $v = $v.Substring(1, $v.Length-2) }
+            if ($k -eq 'DAILY_SYNC_HOUR') { try { $dailySyncHour = [int]$v } catch {} }
+            if ($k -eq 'NETLIFY_AUTH_TOKEN') { $netlifyToken = $v }
+            if ($k -eq 'NETLIFY_SITE_ID') { $netlifySiteId = $v }
+        }
+    }
+}
+
+$currentHour = (Get-Date).Hour
+$shouldSync = ($lastSync -ne $today) -and ($currentHour -ge $dailySyncHour)
+
+if ($shouldSync) {
+    "=== $timestamp daily-sync start ===" | Out-File -FilePath $logFile -Append -Encoding utf8
+    $syncOk = $true
+
+    try {
+        $scrapeOutput = & node (Join-Path $scriptDir 'scrape-bookings.js') 2>&1 | Out-String
+        "--- scrape ---`n$($scrapeOutput.TrimEnd())" | Out-File -FilePath $logFile -Append -Encoding utf8
+    } catch {
+        "Scrape crashed: $($_.Exception.Message)" | Out-File -FilePath $logFile -Append -Encoding utf8
+        $syncOk = $false
+    }
+
+    try {
+        $enrichOutput = & node (Join-Path $scriptDir 'enrich-orders.js') 2>&1 | Out-String
+        "--- enrich ---`n$($enrichOutput.TrimEnd())" | Out-File -FilePath $logFile -Append -Encoding utf8
+    } catch {
+        "Enrich crashed: $($_.Exception.Message)" | Out-File -FilePath $logFile -Append -Encoding utf8
+        $syncOk = $false
+    }
+
+    if ($syncOk -and $netlifyToken -and $netlifySiteId) {
+        try {
+            $env:NETLIFY_AUTH_TOKEN = $netlifyToken
+            $checklistDir = Resolve-Path (Join-Path $scriptDir '..\HOV-Daily-Checklist')
+            $deployOutput = & npx --yes netlify-cli@latest deploy --dir="$checklistDir" --prod --site="$netlifySiteId" --no-build 2>&1 | Out-String
+            "--- deploy ---`n$($deployOutput.TrimEnd())" | Out-File -FilePath $logFile -Append -Encoding utf8
+        } catch {
+            "Deploy crashed: $($_.Exception.Message)" | Out-File -FilePath $logFile -Append -Encoding utf8
+            $syncOk = $false
+        }
+    } elseif (-not $netlifyToken -or -not $netlifySiteId) {
+        "Skipping deploy: NETLIFY_AUTH_TOKEN or NETLIFY_SITE_ID not set in .env" | Out-File -FilePath $logFile -Append -Encoding utf8
+    }
+
+    if ($syncOk) {
+        $today | Set-Content -Path $lastSyncFile -Encoding utf8
+        "=== daily-sync done ($today) ===" | Out-File -FilePath $logFile -Append -Encoding utf8
+    } else {
+        "=== daily-sync had errors . will retry on next run ===" | Out-File -FilePath $logFile -Append -Encoding utf8
+    }
+}
 
 # Log retention: prune log files older than 30 days
 Get-ChildItem -Path $logDir -Filter 'monitor-*.log' -ErrorAction SilentlyContinue |

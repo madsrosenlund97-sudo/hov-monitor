@@ -3,3 +3,12 @@ logs/
 state.json
 package-lock.json
 audit-report.json
+.env
+auth-state.json
+result.json
+last-daily-sync.txt
+.playwright-browsers/
+_diag.js
+_diag-out.txt
+_task-diag.txt
+_diag-wrapper.ps1

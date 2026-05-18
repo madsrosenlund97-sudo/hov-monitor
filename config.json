@@ -18,8 +18,10 @@
     { "path": "/en/construction-fabrics/",      "mustContain": ["Construction"] },
     { "path": "/en/our-story/",                 "mustContain": ["Our story"] },
     { "path": "/en/wardrobe/",                  "mustContain": ["Wardrobe"] },
-    { "path": "/en/product/premium-suit-bag/",  "mustContain": ["Premium Suit Bag"] }
+    { "path": "/en/product/premium-suit-bag/",  "mustContain": ["Premium Suit Bag"] },
+    { "path": "/wp-admin/admin.php?page=wpamelia-bookings#/appointments", "mustContain": ["Amelia"], "requiresAuth": true }
   ],
+  "auth": { "loginUrl": "/wp-login.php" },
   "concurrency": 1,
   "minFailStreakForAlert": 2,
   "timeoutMs": 30000,
@@ -41,7 +43,8 @@
     "klaviyo",
     "robots.txt",
     "tiktok",
-    "snap.licdn"
+    "snap.licdn",
+    "wp-content/uploads/2026/02/COLOUR-PALETTE-150x150.png"
   ],
   "alertCooldownMinutes": 30,
   "slackWebhookUrl": "",
