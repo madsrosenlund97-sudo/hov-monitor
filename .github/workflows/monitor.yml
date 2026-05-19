@@ -49,15 +49,32 @@ jobs:
           key: hov-monitor-state-${{ github.run_id }}
           restore-keys: hov-monitor-state-
 
+      - name: Restore auth state cache
+        uses: actions/cache/restore@v4
+        with:
+          path: auth-state.json
+          key: hov-monitor-auth-${{ github.run_id }}
+          restore-keys: hov-monitor-auth-
+
       - name: Run monitor
         id: monitor
         continue-on-error: true
+        env:
+          WP_USER: ${{ secrets.WP_USER }}
+          WP_PASS: ${{ secrets.WP_PASS }}
         run: |
           if [ "${{ github.event.inputs.simulate_fail }}" = "true" ]; then
             node monitor.js --simulate-fail > result.json
           else
             node monitor.js > result.json
           fi
+
+      - name: Save auth state cache
+        if: always()
+        uses: actions/cache/save@v4
+        with:
+          path: auth-state.json
+          key: hov-monitor-auth-${{ github.run_id }}
 
       - name: Print monitor result
         run: cat result.json
@@ -85,6 +102,32 @@ jobs:
         with:
           path: state.json
           key: hov-monitor-state-${{ github.run_id }}
+
+      - name: Restore notified-bookings cache
+        if: always()
+        uses: actions/cache/restore@v4
+        with:
+          path: notified-bookings.json
+          key: hov-monitor-notified-${{ github.run_id }}
+          restore-keys: hov-monitor-notified-
+
+      - name: Check for new bookings
+        id: bookings
+        if: always()
+        continue-on-error: true
+        env:
+          WP_USER:        ${{ secrets.WP_USER }}
+          WP_PASS:        ${{ secrets.WP_PASS }}
+          PUSHOVER_USER:  ${{ secrets.PUSHOVER_USER }}
+          PUSHOVER_TOKEN: ${{ secrets.PUSHOVER_TOKEN }}
+        run: node check-bookings.js
+
+      - name: Save notified-bookings cache
+        if: always()
+        uses: actions/cache/save@v4
+        with:
+          path: notified-bookings.json
+          key: hov-monitor-notified-${{ github.run_id }}
 
       - name: Fail the run if monitor failed
         if: steps.monitor.outcome != 'success'

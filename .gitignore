@@ -8,6 +8,7 @@ auth-state.json
 result.json
 last-daily-sync.txt
 .playwright-browsers/
+notified-bookings.json
 _diag.js
 _diag-out.txt
 _task-diag.txt
