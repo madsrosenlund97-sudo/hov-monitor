@@ -129,6 +129,32 @@ jobs:
           path: notified-bookings.json
           key: hov-monitor-notified-${{ github.run_id }}
 
+      - name: Restore notified-orders cache
+        if: always()
+        uses: actions/cache/restore@v4
+        with:
+          path: notified-orders.json
+          key: hov-monitor-notified-orders-${{ github.run_id }}
+          restore-keys: hov-monitor-notified-orders-
+
+      - name: Check for new orders
+        id: orders
+        if: always()
+        continue-on-error: true
+        env:
+          WC_KEY:         ${{ secrets.WC_KEY }}
+          WC_SECRET:      ${{ secrets.WC_SECRET }}
+          PUSHOVER_USER:  ${{ secrets.PUSHOVER_USER }}
+          PUSHOVER_TOKEN: ${{ secrets.PUSHOVER_TOKEN }}
+        run: node check-orders.js
+
+      - name: Save notified-orders cache
+        if: always()
+        uses: actions/cache/save@v4
+        with:
+          path: notified-orders.json
+          key: hov-monitor-notified-orders-${{ github.run_id }}
+
       - name: Fail the run if monitor failed
         if: steps.monitor.outcome != 'success'
         run: |

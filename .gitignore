@@ -9,6 +9,7 @@ result.json
 last-daily-sync.txt
 .playwright-browsers/
 notified-bookings.json
+notified-orders.json
 _diag.js
 _diag-out.txt
 _task-diag.txt
