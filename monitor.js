@@ -1,10 +1,24 @@
 const fs = require('fs');
 const path = require('path');
 
+// Minimal .env loader (no dependency). Reads KEY=VALUE pairs into process.env.
+(function loadEnvFile(){
+  const envFile = path.join(__dirname, '.env');
+  if (!fs.existsSync(envFile)) return;
+  fs.readFileSync(envFile, 'utf8').split(/\r?\n/).forEach((line) => {
+    const m = line.match(/^\s*([A-Za-z_][A-Za-z0-9_]*)\s*=\s*(.*?)\s*$/);
+    if (!m) return;
+    let v = m[2];
+    if ((v.startsWith('"') && v.endsWith('"')) || (v.startsWith("'") && v.endsWith("'"))) v = v.slice(1, -1);
+    if (!process.env[m[1]]) process.env[m[1]] = v;
+  });
+})();
+
 const configPath = path.join(__dirname, 'config.json');
 const config = JSON.parse(fs.readFileSync(configPath, 'utf8'));
 
 const simulateFail = process.argv.includes('--simulate-fail');
+const AUTH_STATE_FILE = path.join(__dirname, 'auth-state.json');
 
 function shouldIgnoreConsole(text) {
   const lower = text.toLowerCase();
@@ -13,12 +27,78 @@ function shouldIgnoreConsole(text) {
   );
 }
 
-async function checkPage(browser, pageConfig) {
-  const context = await browser.newContext({
+async function loginWp(browser) {
+  const loginPath = (config.auth && config.auth.loginUrl) || '/wp-login.php';
+  const wpUser = process.env.WP_USER || '';
+  const wpPass = process.env.WP_PASS || '';
+  if (!wpUser || !wpPass) {
+    throw new Error('Mangler WP_USER/WP_PASS i miljoet (.env eller secrets)');
+  }
+  const ctx = await browser.newContext({
     userAgent: config.userAgent,
     viewport: { width: 1366, height: 900 },
     ignoreHTTPSErrors: false,
   });
+  const page = await ctx.newPage();
+  try {
+    await page.goto(config.site + loginPath, {
+      timeout: config.timeoutMs,
+      waitUntil: 'domcontentloaded',
+    });
+    await page.fill('#user_login', wpUser);
+    await page.fill('#user_pass', wpPass);
+    await Promise.all([
+      page.waitForNavigation({ timeout: config.timeoutMs, waitUntil: 'domcontentloaded' }).catch(() => {}),
+      page.click('#wp-submit'),
+    ]);
+    const finalUrl = page.url();
+    if (!finalUrl.includes('/wp-admin/')) {
+      const bodyTxt = (await page.textContent('body').catch(() => '')) || '';
+      let hint = '';
+      if (/incorrect|forkert|invalid/i.test(bodyTxt)) hint = ' (forkert kodeord)';
+      else if (/captcha|verify|robot/i.test(bodyTxt)) hint = ' (captcha/sikkerhedsplugin blokerer)';
+      throw new Error('Login mislykkedes' + hint + ' . landede paa ' + finalUrl);
+    }
+    await ctx.storageState({ path: AUTH_STATE_FILE });
+  } finally {
+    await ctx.close();
+  }
+}
+
+async function checkPage(browser, pageConfig, retryCtx) {
+  // If the page needs auth but no credentials are set, skip rather than alert.
+  if (pageConfig.requiresAuth && !retryCtx && (!process.env.WP_USER || !process.env.WP_PASS)) {
+    return {
+      url: config.site + pageConfig.path,
+      ok: true,
+      skipped: true,
+      reason: 'WP_USER/WP_PASS ikke sat . auth-checket springes over',
+      status: null,
+      title: '',
+      loadMs: 0,
+      problems: [],
+      jsErrors: [],
+      firstPartyHttpErrors: [],
+      thirdPartyServerErrors: [],
+      networkFailures: [],
+      navError: null,
+    };
+  }
+  // Use language-appropriate Accept-Language header so WPML does not
+  // redirect Danish pages to /en/ when the runner happens to default to en-US.
+  const isEnglishPath = pageConfig.path.startsWith('/en/') || pageConfig.path === '/en';
+  const acceptLanguage = isEnglishPath ? 'en-US,en;q=0.9' : 'da-DK,da;q=0.9,en;q=0.5';
+  const ctxOpts = {
+    userAgent: config.userAgent,
+    viewport: { width: 1366, height: 900 },
+    ignoreHTTPSErrors: false,
+    locale: isEnglishPath ? 'en-US' : 'da-DK',
+    extraHTTPHeaders: { 'Accept-Language': acceptLanguage },
+  };
+  if (pageConfig.requiresAuth && fs.existsSync(AUTH_STATE_FILE)) {
+    ctxOpts.storageState = AUTH_STATE_FILE;
+  }
+  const context = await browser.newContext(ctxOpts);
   const page = await context.newPage();
 
   const jsErrors = [];           // real JS exceptions (not resource load failures)
@@ -84,6 +164,29 @@ async function checkPage(browser, pageConfig) {
 
   const loadMs = Date.now() - start;
   const status = response ? response.status() : null;
+
+  // Auth expired: if a requiresAuth page was redirected to wp-login, re-login and retry once.
+  if (pageConfig.requiresAuth && !retryCtx && page.url().includes('/wp-login.php')) {
+    await context.close();
+    try {
+      await loginWp(browser);
+    } catch (loginErr) {
+      return {
+        url,
+        ok: false,
+        status: null,
+        title: '',
+        loadMs,
+        problems: ['Auto-login mislykkedes: ' + loginErr.message],
+        jsErrors: [],
+        firstPartyHttpErrors: [],
+        thirdPartyServerErrors: [],
+        networkFailures: [],
+        navError: null,
+      };
+    }
+    return checkPage(browser, pageConfig, { retried: true });
+  }
 
   let bodyText = '';
   const missingTerms = [];
