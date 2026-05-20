@@ -2,9 +2,9 @@ name: Daily checklist sync
 
 on:
   schedule:
-    # Every hour from 05 UTC (07 CEST) to 17 UTC (19 CEST) on weekdays
+    # Daily at 05 UTC = 07 CEST (06 CET in winter). One run per day before opening hours.
     # GitHub cron is best-effort; can be delayed 5-15 min during peak.
-    - cron: '0 5-17 * * 1-6'
+    - cron: '0 5 * * *'
   workflow_dispatch:
 
 permissions:
