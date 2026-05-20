@@ -1,0 +1,81 @@
+name: Daily checklist sync
+
+on:
+  schedule:
+    # Every hour from 05 UTC (07 CEST) to 17 UTC (19 CEST) on weekdays
+    # GitHub cron is best-effort; can be delayed 5-15 min during peak.
+    - cron: '0 5-17 * * 1-6'
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: hov-daily-sync
+  cancel-in-progress: false
+
+jobs:
+  sync:
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '20'
+
+      - name: Install npm deps
+        run: npm install --no-audit --no-fund
+
+      - name: Cache Playwright Chromium
+        uses: actions/cache@v4
+        with:
+          path: ~/.cache/ms-playwright
+          key: playwright-chromium-${{ hashFiles('package.json') }}
+          restore-keys: playwright-chromium-
+
+      - name: Install Playwright Chromium
+        run: npx playwright install chromium
+
+      - name: Restore auth state cache
+        uses: actions/cache/restore@v4
+        with:
+          path: auth-state.json
+          key: hov-monitor-auth-${{ github.run_id }}
+          restore-keys: hov-monitor-auth-
+
+      - name: Scrape Amelia bookings
+        env:
+          WP_USER: ${{ secrets.WP_USER }}
+          WP_PASS: ${{ secrets.WP_PASS }}
+        run: node scrape-bookings.js
+
+      - name: Enrich with MTM orders
+        env:
+          LAGER_USER: ${{ secrets.LAGER_USER }}
+          LAGER_PASS: ${{ secrets.LAGER_PASS }}
+        run: node enrich-orders.js
+        continue-on-error: true
+
+      - name: Save auth state cache
+        if: always()
+        uses: actions/cache/save@v4
+        with:
+          path: auth-state.json
+          key: hov-monitor-auth-${{ github.run_id }}
+
+      - name: Deploy checklist to Netlify
+        env:
+          NETLIFY_AUTH_TOKEN: ${{ secrets.NETLIFY_AUTH_TOKEN }}
+        run: |
+          npx --yes netlify-cli@latest deploy \
+            --dir=checklist \
+            --site="${{ secrets.NETLIFY_SITE_ID }}" \
+            --prod \
+            --no-build
+
+      - name: Summary
+        run: |
+          echo "Checklist deployed at $(date -u +'%Y-%m-%d %H:%M:%S UTC')"
+          head -20 checklist/data/bookings.js || true
