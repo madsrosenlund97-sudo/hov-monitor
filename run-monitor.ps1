@@ -33,23 +33,50 @@ try { $parsed = $rawOutput | ConvertFrom-Json -ErrorAction Stop } catch {}
 $config = Get-Content $configFile -Raw | ConvertFrom-Json
 $cooldownMinutes = [int]$config.alertCooldownMinutes
 if ($cooldownMinutes -le 0) { $cooldownMinutes = 30 }
+$minFailStreak = [int]$config.minFailStreakForAlert
+if ($minFailStreak -le 0) { $minFailStreak = 1 }
 
-$state = [pscustomobject]@{ lastStatus = 'unknown'; lastAlertTime = $null; failStreak = 0 }
+$state = [pscustomobject]@{ lastStatus = 'unknown'; lastAlertTime = $null; failStreak = 0; alerted = $false }
 if (Test-Path $stateFile) {
     try { $state = Get-Content $stateFile -Raw | ConvertFrom-Json } catch {}
+}
+if (-not (Get-Member -InputObject $state -Name 'alerted' -ErrorAction SilentlyContinue)) {
+    $state | Add-Member -NotePropertyName 'alerted' -NotePropertyValue $false
 }
 
 $currentStatus = if ($exitCode -eq 0) { 'ok' } else { 'fail' }
 $now = Get-Date
 
+# Detect when ALL frontend pages fail with net::ERR_INTERNET_DISCONNECTED.
+# That means THIS computer lost its connection - not a site failure - so do not alert.
+$localNetOutage = $false
+if ($parsed -and $parsed.results -and ($parsed.results.Count -gt 1)) {
+    $allDisconnected = $true
+    foreach ($r in $parsed.results) {
+        if (-not $r.navError -or ($r.navError -notmatch 'ERR_INTERNET_DISCONNECTED|ERR_NETWORK_CHANGED|ERR_NAME_NOT_RESOLVED')) {
+            $allDisconnected = $false; break
+        }
+    }
+    if ($allDisconnected) { $localNetOutage = $true }
+}
+
+# Track consecutive-fail streak (matches cloud notify.js behaviour).
+$newFailStreak = if ($currentStatus -eq 'fail') { [int]$state.failStreak + 1 } else { 0 }
+
 # Decide whether to alert
 $shouldAlert = $false
 $alertKind = ''
 
-if ($currentStatus -eq 'fail') {
-    if ($state.lastStatus -ne 'fail') {
-        $shouldAlert = $true
-        $alertKind = 'down'
+if ($localNetOutage) {
+    # local internet drop - skip alert, do not even bump the streak
+    $newFailStreak = [int]$state.failStreak
+    "Skipping alert: local network outage (all pages ERR_INTERNET_DISCONNECTED)" | Out-File -FilePath $logFile -Append -Encoding utf8
+} elseif ($currentStatus -eq 'fail') {
+    if ($newFailStreak -lt $minFailStreak) {
+        # streak below threshold - suppress (transient flake)
+        "Suppressing alert: failStreak $newFailStreak < threshold $minFailStreak" | Out-File -FilePath $logFile -Append -Encoding utf8
+    } elseif (-not $state.alerted) {
+        $shouldAlert = $true; $alertKind = 'down'
     } else {
         $cooldownPassed = $true
         if ($state.lastAlertTime) {
@@ -60,7 +87,7 @@ if ($currentStatus -eq 'fail') {
         }
         if ($cooldownPassed) { $shouldAlert = $true; $alertKind = 'still-down' }
     }
-} elseif ($currentStatus -eq 'ok' -and $state.lastStatus -eq 'fail') {
+} elseif ($currentStatus -eq 'ok' -and $state.alerted) {
     $shouldAlert = $true
     $alertKind = 'recovered'
 }
@@ -143,12 +170,12 @@ if ($shouldAlert) {
     $state.lastAlertTime = $now.ToString('o')
 }
 
-if ($currentStatus -eq 'fail') {
-    if ($state.lastStatus -eq 'fail') { $state.failStreak = ($state.failStreak + 1) } else { $state.failStreak = 1 }
-} else {
-    $state.failStreak = 0
-}
+# Track whether we've notified user about current incident (matches notify.js)
+if ($alertKind -eq 'down')      { $state.alerted = $true }
+if ($alertKind -eq 'recovered') { $state.alerted = $false }
+
 $state.lastStatus = $currentStatus
+$state.failStreak = $newFailStreak
 $state | ConvertTo-Json | Out-File -FilePath $stateFile -Encoding utf8
 
 # Daily sync: scrape Amelia bookings, enrich with MTM orders, deploy to Netlify.

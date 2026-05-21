@@ -117,3 +117,164 @@ I `config.json` kan du tilføje flere paths som hver kan have egen `mustContain`
 Sænk `maxLoadMs` hvis du vil have besked om performance-regressioner.
 Skru op på `alertCooldownMinutes` hvis du ikke vil have flere "still-down"
 alerts i samme nedbrud.
+
+## Overvågning af sider bag wp-admin login
+
+Sider med `"requiresAuth": true` i `config.json` får automatisk login-flow før
+check. Eksempel der allerede er tilføjet:
+
+```json
+{ "path": "/wp-admin/admin.php?page=wpamelia-bookings#/appointments",
+  "mustContain": ["Amelia"], "requiresAuth": true }
+```
+
+Login-cookies cachelagres i `auth-state.json` så der ikke logges ind hver
+gang. Hvis sessionen udløber detekteres redirect til `wp-login.php` og der
+logges ind igen automatisk.
+
+### Lokalt setup
+
+1. Kopier `.env.example` til `.env` i samme mappe.
+2. Sæt `WP_USER` og `WP_PASS` til admin-loginet på `houseofvinterberg.com`.
+3. `.env` og `auth-state.json` er allerede i `.gitignore` så de ikke committer.
+
+Test det med:
+
+```powershell
+node monitor.js
+```
+
+Output indeholder nu også et result-objekt for wp-admin URL'en. Første kørsel
+logger ind og gemmer cookies, efterfølgende kørsler genbruger dem.
+
+### GitHub Actions setup
+
+Tilføj to secrets under **Settings → Secrets and variables → Actions**:
+
+| Navn | Værdi |
+|---|---|
+| `WP_USER` | wp-admin brugernavn |
+| `WP_PASS` | wp-admin password |
+
+Workflow'en cacher `auth-state.json` mellem runs, så hver kørsel ikke laver
+en ny login. Hvis dit WP-site har Wordfence eller andet sikkerhedsplugin der
+spotter automatiseret login, så whitelist user-agent
+`Mozilla/5.0 (HOV-Monitor; +https://houseofvinterberg.com) AppleWebKit/537.36`
+eller den IP GitHub Actions kører fra.
+
+### Hvad checket fanger
+
+- Login virker (forkert password = alert med hint).
+- wp-admin er ikke død (5xx, timeout).
+- Amelia plugin loadet (mustContain `Amelia`).
+- Sikkerhedsplugin har ikke blokeret kontoen.
+
+Det fanger IKKE om der er kommet nye bookinger . dertil bruges scraperen
+beskrevet nedenfor.
+
+## Amelia bookings scraper
+
+`scrape-bookings.js` tager dagens bookinger ud fra Amelia admin og skriver dem
+til en JS-fil som den daglige tjekliste læser. Sammen med form-loginet i
+`monitor.js` betyder det at vi kan vise rigtige bookings i tjeklisten indtil
+det nye bookingsystem er færdigt.
+
+### Filer
+
+| Fil | Hvad |
+|---|---|
+| `scrape-bookings.js` | Logger ind (eller bruger cached state), aabner Amelia appointments view, opfanger XHR-svaret og skriver bookings ud. |
+| `../HOV-Daily-Checklist/data/bookings.js` | Output. `window.HOV_BOOKINGS` array som tjeklisten loader. |
+| `logs/amelia-raw.json` | Rå XHR-payloads gemmes her ved hver kørsel (til debugging af parseren). |
+
+### Sådan virker det
+
+1. Bruger den samme `.env` med `WP_USER`/`WP_PASS` og `auth-state.json` som monitoren.
+2. Aabner `wp-admin/admin.php?page=wpamelia-bookings#/appointments` og lytter på
+   alle responses der matcher `wpamelia` eller `amelia/v1`.
+3. Filtrerer til dagens dato, normaliserer felter (time, navn, service, status,
+   id, notes) og skriver til `bookings.js`.
+4. Tjeklisten har et `<script src="data/bookings.js">` der populerer
+   `window.HOV_BOOKINGS`, og rendere automatisk de nye data næste gang siden åbnes.
+
+### Kør den
+
+```powershell
+cd "C:\Users\mads\.claude\Code\HOV-Monitor"
+node scrape-bookings.js
+```
+
+`run-monitor.ps1` kører den automatisk efter hver monitor-cyklus, så når den
+scheduled task'en kører hvert 5. minut, bliver bookings også opdateret.
+
+### Hvis parseren ikke matcher Amelias struktur
+
+Amelias API-struktur varierer mellem versioner. Hvis ingen bookings vises:
+
+1. Aabn `HOV-Monitor/logs/amelia-raw.json` . den indeholder de raa XHR-svar.
+2. Send den til Claude, så raffinerer han `normalizeAppointment` /
+   `extractAppointments` funktionerne i `scrape-bookings.js` til at passe din
+   Amelia version.
+
+Felter som CMT status, leveringsdato og fittings-tæller er kun pladsholdere
+indtil de bygges ind i Amelia/jeres backend, da Amelia ikke har dem out of the
+box.
+
+## MTM ordre-berigelse (Lagersystem)
+
+`enrich-orders.js` kører lige efter `scrape-bookings.js` og slår dagens
+booking-kunder op i HOV Lagersystemet (`houseofvinterberg.netlify.app`).
+Hvis en kunde har en MTM ordre, beriges bookingen med item, ordre-status,
+CMT-status og shipping-dato.
+
+### Sådan virker det
+
+1. Logger ind i Lagersystemet via Supabase auth (`LAGER_USER` + `LAGER_PASS`).
+2. Læser dagens bookings fra `data/bookings.js`.
+3. For hver unik kunde-navn, kalder Supabase REST direkte:
+   `GET /rest/v1/orders?customer_name=ilike.*Navn*&...`
+4. Tager den nyeste ordre og merger ind i bookingens felter.
+5. Skriver opdateret `bookings.js`.
+
+Førstegangsbesøg/opmålinger uden ordre forbliver med deres oprindelige Amelia
+service-info (fx "Bryllups Opmåling"), så staff stadig kan se hvad bookingen
+er for. Returnerende kunder med aktiv MTM ordre får ordre-info vist
+(fx "AA Collection (JX3163) . Delivered").
+
+### Manuelt run
+
+```powershell
+cd "C:\Users\mads\.claude\Code\HOV-Monitor"
+npm run refresh   # = scrape + enrich (lokal data, ingen deploy)
+npm run sync-now  # = scrape + enrich + deploy til Netlify (kan køre når som helst)
+```
+
+### Daglig auto-sync til Netlify
+
+`run-monitor.ps1` (som scheduled task hvert 5. minut) inkluderer en daglig
+sync der kører **én gang per dag** efter kl. 07:00. Den scraper Amelia,
+beriger med Lagersystem-data, og deployer det opdaterede `bookings.js` til
+`https://hov-daglig-tjekliste.netlify.app`.
+
+Konfiguration i `.env`:
+
+```
+NETLIFY_AUTH_TOKEN=nfp_...
+NETLIFY_SITE_ID=54c915a9-db97-4e4b-8cb8-67fcb2fb5bcd
+DAILY_SYNC_HOUR=7
+```
+
+State i `last-daily-sync.txt` (gitignored) holder styr på hvilken dato sidste
+sync skete, så scheduled task'en der fyrer hvert 5. minut kun gennemfører
+sync én gang per dag. Slet filen hvis du vil tvinge en ny sync samme dag.
+
+### Credentials
+
+Tilføj til `.env`:
+
+```
+LAGER_USER=mads@houseofvinterberg.com
+LAGER_PASS=<dit-lager-kodeord>
+```
+
+(samme login som du bruger på `houseofvinterberg.netlify.app`).
