@@ -27,6 +27,33 @@ function shouldIgnoreConsole(text) {
   );
 }
 
+/**
+ * Tjekker om en first-party HTTP-fejl skal ignoreres baseret på URL+status.
+ * Bruges til at filtrere kendte ikke-kritiske 4xx'er (fx admin-ajax 403)
+ * fra alert-strømmen. Hver regel skal matche BÅDE urlIncludes OG status
+ * (hvis status er sat) for at filtere — så vi ikke utilsigtet skjuler
+ * admin-ajax 500'er der faktisk er kritiske.
+ *
+ * Eksempel-regel:
+ *   { "urlIncludes": "/wp-admin/admin-ajax.php", "status": 403 }
+ * Match: en 403 på en URL der indeholder "/wp-admin/admin-ajax.php" → ignorér.
+ * Ingen match: en 500 på samme URL → stadig alert.
+ */
+function shouldIgnoreFirstPartyError(url, status) {
+  if (!Array.isArray(config.ignoredFirstPartyErrors)) return false;
+  const lower = url.toLowerCase();
+  return config.ignoredFirstPartyErrors.some((rule) => {
+    if (typeof rule.status === 'number' && status !== rule.status) return false;
+    if (
+      typeof rule.urlIncludes === 'string' &&
+      !lower.includes(rule.urlIncludes.toLowerCase())
+    ) {
+      return false;
+    }
+    return true;
+  });
+}
+
 async function loginWp(browser) {
   const loginPath = (config.auth && config.auth.loginUrl) || '/wp-login.php';
   const wpUser = process.env.WP_USER || '';
@@ -141,6 +168,10 @@ async function checkPage(browser, pageConfig, retryCtx) {
     if (shouldIgnoreConsole(url)) return;
     const isFirstParty = url.startsWith(siteOrigin);
     if (isFirstParty) {
+      // Filtrér kendte ikke-kritiske first-party 4xx'er (admin-ajax 403,
+      // wc-ajax 403 osv.) væk så vi kun alerter på reelle problemer.
+      // Status-specifik regel — en 500 på samme URL bliver IKKE filtreret.
+      if (shouldIgnoreFirstPartyError(url, status)) return;
       firstPartyHttpErrors.push({ url, status });
     } else if (status >= 500) {
       thirdPartyServerErrors.push({ url, status });
@@ -157,7 +188,18 @@ async function checkPage(browser, pageConfig, retryCtx) {
       timeout: config.timeoutMs,
       waitUntil: 'domcontentloaded',
     });
-    await page.waitForLoadState('networkidle', { timeout: 8000 }).catch(() => {});
+    // Vent på reel content (h1 eller body med text) i stedet for kun
+    // networkidle — 3rd-party scripts (Cookiebot, GTM, Klaviyo) holder
+    // networkidle blokeret længere end 8s, hvilket forhindrer body-text
+    // check i at se renderet content. Selector-wait fanger renderet
+    // content uden at hænge på 3rd-party requests.
+    await page
+      .waitForSelector('h1, h2, [role="heading"]', { timeout: 10000 })
+      .catch(() => {});
+    // Sekundær networkidle-wait med højere timeout (15s) som safety-net
+    // for sider uden heading-selector. Cookiebot+GTM+Klaviyo har behov
+    // for 10-13s i praksis før networkidle nås.
+    await page.waitForLoadState('networkidle', { timeout: 15000 }).catch(() => {});
   } catch (e) {
     navError = e.message;
   }
@@ -199,10 +241,32 @@ async function checkPage(browser, pageConfig, retryCtx) {
     try {
       bodyText = (await page.textContent('body')) || '';
     } catch (_) {}
-    const haystack = (title + ' ' + bodyText).toLowerCase();
+    let haystack = (title + ' ' + bodyText).toLowerCase();
     for (const term of pageConfig.mustContain || []) {
-      if (!haystack.includes(term.toLowerCase())) {
+      if (haystack.includes(term.toLowerCase())) continue;
+      // Retry-on-miss: term ikke fundet ved første læsning. Måske er
+      // content lazily renderet eller scripts ikke færdige med at
+      // skrive til DOM. Vent op til 5s på at term dukker op via
+      // waitForFunction. Kun ved den faktiske miss → ingen ekstra
+      // venten for sider hvor alle terms findes med det samme.
+      const found = await page
+        .waitForFunction(
+          (t) =>
+            (document.body?.innerText || '').toLowerCase().includes(t),
+          term.toLowerCase(),
+          { timeout: 5000 }
+        )
+        .then(() => true)
+        .catch(() => false);
+      if (!found) {
         missingTerms.push(term);
+      } else {
+        // Refresh haystack med post-wait body så efterfølgende terms
+        // også kan matche uden ekstra retry-runder.
+        try {
+          bodyText = (await page.textContent('body')) || '';
+          haystack = (title + ' ' + bodyText).toLowerCase();
+        } catch (_) {}
       }
     }
   }

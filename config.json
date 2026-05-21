@@ -21,7 +21,7 @@
     { "path": "/en/product/premium-suit-bag/",  "mustContain": ["Premium Suit Bag"] }
   ],
   "concurrency": 1,
-  "minFailStreakForAlert": 2,
+  "minFailStreakForAlert": 3,
   "timeoutMs": 30000,
   "maxLoadMs": 20000,
   "userAgent": "Mozilla/5.0 (HOV-Monitor; +https://houseofvinterberg.com) AppleWebKit/537.36",
@@ -43,6 +43,12 @@
     "tiktok",
     "snap.licdn",
     "wp-content/uploads/2026/02/COLOUR-PALETTE-150x150.png"
+  ],
+  "ignoredFirstPartyErrors": [
+    { "urlIncludes": "/wp-admin/admin-ajax.php", "status": 401, "note": "admin-ajax 401 fra public pages er normalt — pluginet kalder admin-ajax uden auth" },
+    { "urlIncludes": "/wp-admin/admin-ajax.php", "status": 403, "note": "admin-ajax 403 fra public pages er normalt — admin-ajax er restricted by default" },
+    { "urlIncludes": "?wc-ajax=", "status": 403, "note": "WC cart-fragments AJAX 403 — bypassed af vores Vercel-frontend" },
+    { "urlIncludes": "/wp-json/wp/v2/users", "status": 401, "note": "REST API user-endpoint kræver auth — normalt 401 for public" }
   ],
   "alertCooldownMinutes": 30,
   "slackWebhookUrl": "",
