@@ -48,7 +48,8 @@
     { "urlIncludes": "/wp-admin/admin-ajax.php", "status": 401, "note": "admin-ajax 401 fra public pages er normalt — pluginet kalder admin-ajax uden auth" },
     { "urlIncludes": "/wp-admin/admin-ajax.php", "status": 403, "note": "admin-ajax 403 fra public pages er normalt — admin-ajax er restricted by default" },
     { "urlIncludes": "?wc-ajax=", "status": 403, "note": "WC cart-fragments AJAX 403 — bypassed af vores Vercel-frontend" },
-    { "urlIncludes": "/wp-json/wp/v2/users", "status": 401, "note": "REST API user-endpoint kræver auth — normalt 401 for public" }
+    { "urlIncludes": "/wp-json/wp/v2/users", "status": 401, "note": "REST API user-endpoint kræver auth — normalt 401 for public" },
+    { "urlIncludes": "z0f76a1d14fd21a8fb5fd0d03e0fdc3d3cedae52f", "status": 404, "note": "HOV tracking plugin server-side endpoint (Meta CAPI) - 404 her er en ægte WP-bug men ikke en frontend-fejl for besøgende" }
   ],
   "alertCooldownMinutes": 30,
   "slackWebhookUrl": "",
