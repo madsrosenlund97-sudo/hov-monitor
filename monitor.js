@@ -281,12 +281,13 @@ async function checkPage(browser, pageConfig, retryCtx) {
   if (navError) problems.push('Navigation fejlede: ' + navError);
   if (status !== null && status >= 400)
     problems.push('HTTP ' + status + ' returneret');
-  if (!navError && loadMs > config.maxLoadMs)
+  const pageMaxLoadMs = pageConfig.maxLoadMs || config.maxLoadMs;
+  if (!navError && loadMs > pageMaxLoadMs)
     problems.push(
       'Langsom load: ' +
         (loadMs / 1000).toFixed(1) +
         's (max ' +
-        (config.maxLoadMs / 1000).toFixed(0) +
+        (pageMaxLoadMs / 1000).toFixed(0) +
         's)'
     );
   if (missingTerms.length)

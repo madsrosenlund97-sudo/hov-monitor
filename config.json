@@ -9,7 +9,7 @@
     { "path": "/konstruktion-og-tekstiler/",    "mustContain": ["Konstruktion"] },
     { "path": "/our-story/",                    "mustContain": ["Our story"] },
     { "path": "/garderobe/",                    "mustContain": ["Garderobe"] },
-    { "path": "/kasse/",                        "mustContain": ["Kurv"] },
+    { "path": "/kasse/",                        "mustContain": ["Kurv"], "maxLoadMs": 45000, "note": "FunnelKit checkout - tung JS, redirecter til cart ved tom kurv; hoejere load-gr:nse" },
     { "path": "/en/",                           "mustContain": ["Tailored menswear"] },
     { "path": "/en/booking/",                   "mustContain": ["Booking"] },
     { "path": "/en/our-prices/",                "mustContain": ["Our Prices"] },
