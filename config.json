@@ -42,7 +42,9 @@
     "robots.txt",
     "tiktok",
     "snap.licdn",
-    "wp-content/uploads/2026/02/COLOUR-PALETTE-150x150.png"
+    "wp-content/uploads/2026/02/COLOUR-PALETTE-150x150.png",
+    "report-only content security policy",
+    "csp.withgoogle.com"
   ],
   "ignoredFirstPartyErrors": [
     { "urlIncludes": "/wp-admin/admin-ajax.php", "status": 401, "note": "admin-ajax 401 fra public pages er normalt — pluginet kalder admin-ajax uden auth" },
