@@ -83,7 +83,8 @@ jobs:
         env:
           ALERT_COOLDOWN_MIN: '30'
           PUSHOVER_USER:       ${{ secrets.PUSHOVER_USER }}
-          PUSHOVER_TOKEN:      ${{ secrets.PUSHOVER_TOKEN }}
+          # Website Alert app — used by notify.js when monitor.js detects site/booking page down
+          PUSHOVER_TOKEN:      ${{ secrets.PUSHOVER_TOKEN_WEBSITE }}
           PUSHOVER_PRIORITY:   ${{ secrets.PUSHOVER_PRIORITY }}
           TELEGRAM_BOT_TOKEN:  ${{ secrets.TELEGRAM_BOT_TOKEN }}
           TELEGRAM_CHAT_ID:    ${{ secrets.TELEGRAM_CHAT_ID }}
@@ -119,7 +120,8 @@ jobs:
           WP_USER:        ${{ secrets.WP_USER }}
           WP_PASS:        ${{ secrets.WP_PASS }}
           PUSHOVER_USER:  ${{ secrets.PUSHOVER_USER }}
-          PUSHOVER_TOKEN: ${{ secrets.PUSHOVER_TOKEN }}
+          # Booking app — used by check-bookings.js (Amelia/relaunch booking notifications)
+          PUSHOVER_TOKEN: ${{ secrets.PUSHOVER_TOKEN_BOOKING }}
         run: node check-bookings.js
 
       - name: Save notified-bookings cache
@@ -145,7 +147,8 @@ jobs:
           WC_KEY:         ${{ secrets.WC_KEY }}
           WC_SECRET:      ${{ secrets.WC_SECRET }}
           PUSHOVER_USER:  ${{ secrets.PUSHOVER_USER }}
-          PUSHOVER_TOKEN: ${{ secrets.PUSHOVER_TOKEN }}
+          # Webshop app — used by check-orders.js (cha-ching at new WC orders)
+          PUSHOVER_TOKEN: ${{ secrets.PUSHOVER_TOKEN_WEBSHOP }}
         run: node check-orders.js
 
       - name: Save notified-orders cache
