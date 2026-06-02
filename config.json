@@ -16,7 +16,7 @@
     { "path": "/en/outerwear",           "mustContain": ["Vinterberg"] },
     { "path": "/en/accessories",         "mustContain": ["Accessories"] },
     { "path": "/en/wardrobe-service",    "mustContain": ["Wardrobe"] },
-    { "path": "/sitemap.xml",            "mustContain": ["<urlset"] },
+    { "path": "/sitemap.xml",            "mustContain": ["houseofvinterberg.com"] },
     { "path": "/robots.txt",             "mustContain": ["User-agent"] }
   ],
   "concurrency": 1,
