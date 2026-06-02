@@ -178,25 +178,22 @@ $state.lastStatus = $currentStatus
 $state.failStreak = $newFailStreak
 $state | ConvertTo-Json | Out-File -FilePath $stateFile -Encoding utf8
 
-# Daily sync: scrape Amelia bookings, enrich with MTM orders, deploy to Netlify.
+# Daily sync: scrape Amelia bookings, enrich with MTM orders, deploy to Vercel.
 # Runs once per day, the first time the scheduled task fires at/after DAILY_SYNC_HOUR.
 $lastSyncFile = Join-Path $scriptDir 'last-daily-sync.txt'
 $today = Get-Date -Format 'yyyy-MM-dd'
 $lastSync = if (Test-Path $lastSyncFile) { (Get-Content $lastSyncFile -Raw).Trim() } else { '' }
 
-# Load .env for NETLIFY_AUTH_TOKEN, NETLIFY_SITE_ID, DAILY_SYNC_HOUR
+# Load .env for DAILY_SYNC_HOUR. Vercel CLI uses its own ~/.vercel/auth.json
+# stored when you ran `npx vercel login`, so no token needed here.
 $envFile = Join-Path $scriptDir '.env'
-$dailySyncHour = 7
-$netlifyToken = ''
-$netlifySiteId = ''
+$dailySyncHour = 6
 if (Test-Path $envFile) {
     Get-Content $envFile -Encoding utf8 | ForEach-Object {
         if ($_ -match '^\s*([A-Za-z_][A-Za-z0-9_]*)\s*=\s*(.*)$') {
             $k = $matches[1]; $v = $matches[2].Trim()
             if ($v.StartsWith('"') -and $v.EndsWith('"')) { $v = $v.Substring(1, $v.Length-2) }
             if ($k -eq 'DAILY_SYNC_HOUR') { try { $dailySyncHour = [int]$v } catch {} }
-            if ($k -eq 'NETLIFY_AUTH_TOKEN') { $netlifyToken = $v }
-            if ($k -eq 'NETLIFY_SITE_ID') { $netlifySiteId = $v }
         }
     }
 }
@@ -224,18 +221,17 @@ if ($shouldSync) {
         $syncOk = $false
     }
 
-    if ($syncOk -and $netlifyToken -and $netlifySiteId) {
+    if ($syncOk) {
         try {
-            $env:NETLIFY_AUTH_TOKEN = $netlifyToken
             $checklistDir = Resolve-Path (Join-Path $scriptDir '..\HOV-Daily-Checklist')
-            $deployOutput = & npx --yes netlify-cli@latest deploy --dir="$checklistDir" --prod --site="$netlifySiteId" --no-build 2>&1 | Out-String
+            Push-Location $checklistDir
+            $deployOutput = & npx --yes vercel@latest deploy --prod --yes 2>&1 | Out-String
+            Pop-Location
             "--- deploy ---`n$($deployOutput.TrimEnd())" | Out-File -FilePath $logFile -Append -Encoding utf8
         } catch {
             "Deploy crashed: $($_.Exception.Message)" | Out-File -FilePath $logFile -Append -Encoding utf8
             $syncOk = $false
         }
-    } elseif (-not $netlifyToken -or -not $netlifySiteId) {
-        "Skipping deploy: NETLIFY_AUTH_TOKEN or NETLIFY_SITE_ID not set in .env" | Out-File -FilePath $logFile -Append -Encoding utf8
     }
 
     if ($syncOk) {

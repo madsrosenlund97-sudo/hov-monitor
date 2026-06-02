@@ -9,7 +9,7 @@
     "scrape": "node scrape-bookings.js",
     "enrich": "node enrich-orders.js",
     "refresh": "node scrape-bookings.js && node enrich-orders.js",
-    "sync-now": "node scrape-bookings.js && node enrich-orders.js && npx --yes netlify-cli@latest deploy --dir=../HOV-Daily-Checklist --prod --site=54c915a9-db97-4e4b-8cb8-67fcb2fb5bcd --no-build"
+    "sync-now": "node scrape-bookings.js && node enrich-orders.js && cd ../HOV-Daily-Checklist && npx --yes vercel@latest deploy --prod --yes"
   },
   "dependencies": {
     "playwright": "^1.49.0"

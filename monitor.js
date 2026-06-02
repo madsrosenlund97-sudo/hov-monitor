@@ -232,6 +232,7 @@ async function checkPage(browser, pageConfig, retryCtx) {
 
   let bodyText = '';
   const missingTerms = [];
+  const missingSelectors = [];
   let title = '';
 
   if (!navError && response && response.ok()) {
@@ -241,6 +242,18 @@ async function checkPage(browser, pageConfig, retryCtx) {
     try {
       bodyText = (await page.textContent('body')) || '';
     } catch (_) {}
+
+    // Selector checks: a page may render with the right text but missing a
+    // critical UI element (booking calendar, product grid, etc). Verify each
+    // selector resolves to a real, visible element.
+    for (const sel of pageConfig.mustHaveSelector || []) {
+      const found = await page
+        .waitForSelector(sel, { state: 'attached', timeout: 8000 })
+        .then(() => true)
+        .catch(() => false);
+      if (!found) missingSelectors.push(sel);
+    }
+
     let haystack = (title + ' ' + bodyText).toLowerCase();
     for (const term of pageConfig.mustContain || []) {
       if (haystack.includes(term.toLowerCase())) continue;
@@ -292,6 +305,8 @@ async function checkPage(browser, pageConfig, retryCtx) {
     );
   if (missingTerms.length)
     problems.push('Manglende indhold paa siden: ' + missingTerms.join(', '));
+  if (missingSelectors.length)
+    problems.push('Manglende UI-element: ' + missingSelectors.join(', '));
   if (firstPartyHttpErrors.length) {
     const sample = firstPartyHttpErrors
       .slice(0, 3)
