@@ -1,5 +1,6 @@
 // Detects new WooCommerce orders since last run and pushes a Pushover alert
-// per new order. Runs alongside check-bookings.js (reuses auth-state.json).
+// per new order. Uses the WC REST API directly (drift.houseofvinterberg.com)
+// with consumer key/secret — no browser auth, no Playwright.
 //
 // State: notified-orders.json (set of already-pushed order IDs).
 // First run: populate set without pushing (avoid spamming about all existing).
@@ -28,7 +29,6 @@ const path = require('path');
 })();
 
 const config = JSON.parse(fs.readFileSync(path.join(__dirname, 'config.json'), 'utf8'));
-const AUTH_STATE_FILE = path.join(__dirname, 'auth-state.json');
 const NOTIFIED_FILE = path.join(__dirname, 'notified-orders.json');
 const MAX_REMEMBERED_IDS = 1000;
 const DRY_RUN = process.argv.includes('--dry-run');
@@ -55,34 +55,6 @@ function saveNotified(state) {
 }
 
 const WC_BASE_URL = process.env.WC_BASE_URL || 'https://drift.houseofvinterberg.com';
-
-async function loginWp(chromium) {
-  const wpUser = process.env.WP_USER || '';
-  const wpPass = process.env.WP_PASS || '';
-  if (!wpUser || !wpPass) throw new Error('WP_USER/WP_PASS mangler i miljoet');
-  const browser = await chromium.launch({ headless: true });
-  const ctx = await browser.newContext({ userAgent: config.userAgent });
-  const page = await ctx.newPage();
-  try {
-    await page.goto(WC_BASE_URL + '/wp-login.php', {
-      timeout: config.timeoutMs,
-      waitUntil: 'domcontentloaded',
-    });
-    await page.fill('#user_login', wpUser);
-    await page.fill('#user_pass', wpPass);
-    await Promise.all([
-      page.waitForNavigation({ timeout: config.timeoutMs, waitUntil: 'domcontentloaded' }).catch(() => {}),
-      page.click('#wp-submit'),
-    ]);
-    if (!page.url().includes('/wp-admin/')) {
-      throw new Error('Login mislykkedes - landede paa ' + page.url());
-    }
-    await ctx.storageState({ path: AUTH_STATE_FILE });
-  } finally {
-    await ctx.close();
-    await browser.close();
-  }
-}
 
 function formatDanishMoney(amount, currency) {
   // amount comes as string from WC, eg "1250.00"
@@ -181,75 +153,18 @@ async function fetchOrdersViaRest() {
   return res.json();
 }
 
-async function fetchOrdersViaAdminXhr(page) {
-  // Fallback: visit wp-admin orders page and capture XHR responses.
-  const captured = [];
-  page.on('response', async (resp) => {
-    const url = resp.url();
-    if (!/wc-orders|shop_order|wc\/v3\/orders/i.test(url)) return;
-    try {
-      const ct = resp.headers()['content-type'] || '';
-      if (!ct.includes('json')) return;
-      const data = await resp.json();
-      captured.push(data);
-    } catch (_) {}
-  });
-  await page.goto(WC_BASE_URL + '/wp-admin/admin.php?page=wc-orders', {
-    timeout: config.timeoutMs,
-    waitUntil: 'domcontentloaded',
-  });
-  try {
-    await page.waitForLoadState('networkidle', { timeout: 12000 });
-  } catch (_) {}
-  await page.waitForTimeout(2000);
-
-  // Flatten captured payloads to an array of orders
-  const all = [];
-  for (const p of captured) {
-    if (Array.isArray(p)) all.push(...p);
-    else if (p && Array.isArray(p.data)) all.push(...p.data);
-    else if (p && p.orders) all.push(...(Array.isArray(p.orders) ? p.orders : []));
-  }
-  return all.filter((o) => o && o.id);
-}
 
 (async () => {
-  let chromium;
-  try {
-    ({ chromium } = require('playwright'));
-  } catch (_) {
-    console.error('Playwright ikke installeret');
-    process.exit(2);
-  }
-
-  // WC REST API uses dedicated consumer key/secret - no Playwright needed.
-  let orders = null;
-  let method = 'rest';
+  // WC REST API only. The previous Playwright/wp-admin fallback path required
+  // a working WP login flow which became fragile after the Next.js cutover;
+  // REST is the only contract we maintain now.
+  let orders;
+  const method = 'rest';
   try {
     orders = await fetchOrdersViaRest();
   } catch (e) {
-    // Fall back to wp-admin XHR scraping if REST is unavailable
-    if (!chromium) {
-      console.error('REST fejlede og Playwright ikke tilgaengelig: ' + e.message);
-      process.exit(2);
-    }
-    if (!fs.existsSync(AUTH_STATE_FILE)) {
-      try { await loginWp(chromium); }
-      catch (e2) { console.error('Login fejlede: ' + e2.message); process.exit(2); }
-    }
-    const browser = await chromium.launch({ headless: true });
-    try {
-      const ctx = await browser.newContext({ userAgent: config.userAgent, storageState: AUTH_STATE_FILE });
-      const page = await ctx.newPage();
-      orders = await fetchOrdersViaAdminXhr(page);
-      method = 'xhr';
-      await ctx.close();
-    } catch (e2) {
-      console.error('Begge order-fetch metoder fejlede. REST: ' + e.message + ' / XHR: ' + e2.message);
-      await browser.close();
-      process.exit(1);
-    }
-    await browser.close();
+    console.error('WC REST fejlede: ' + e.message);
+    process.exit(1);
   }
 
   if (!orders) {

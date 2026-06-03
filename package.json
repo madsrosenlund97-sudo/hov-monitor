@@ -6,10 +6,8 @@
   "scripts": {
     "check": "node monitor.js",
     "test-alert": "node monitor.js --simulate-fail",
-    "scrape": "node scrape-bookings.js",
-    "enrich": "node enrich-orders.js",
-    "refresh": "node scrape-bookings.js && node enrich-orders.js",
-    "sync-now": "node scrape-bookings.js && node enrich-orders.js && cd ../HOV-Daily-Checklist && npx --yes vercel@latest deploy --prod --yes"
+    "bookings": "node check-bookings.js --dry-run",
+    "orders": "node check-orders.js --dry-run"
   },
   "dependencies": {
     "playwright": "^1.49.0"
