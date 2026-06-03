@@ -109,8 +109,11 @@ jobs:
         uses: actions/cache/restore@v4
         with:
           path: notified-bookings.json
-          key: hov-monitor-notified-${{ github.run_id }}
-          restore-keys: hov-monitor-notified-
+          # Specific prefix: "hov-monitor-notified-bookings-" — must NOT collide
+          # with "hov-monitor-notified-orders-" or restore-keys would match both
+          # and load the wrong file (orders content into bookings path).
+          key: hov-monitor-notified-bookings-${{ github.run_id }}
+          restore-keys: hov-monitor-notified-bookings-
 
       - name: Check for new bookings
         id: bookings
@@ -130,7 +133,7 @@ jobs:
         uses: actions/cache/save@v4
         with:
           path: notified-bookings.json
-          key: hov-monitor-notified-${{ github.run_id }}
+          key: hov-monitor-notified-bookings-${{ github.run_id }}
 
       - name: Restore notified-orders cache
         if: always()
