@@ -117,11 +117,12 @@ jobs:
         if: always()
         continue-on-error: true
         env:
-          WP_USER:        ${{ secrets.WP_USER }}
-          WP_PASS:        ${{ secrets.WP_PASS }}
-          PUSHOVER_USER:  ${{ secrets.PUSHOVER_USER }}
-          # Booking app — used by check-bookings.js (Amelia/relaunch booking notifications)
-          PUSHOVER_TOKEN: ${{ secrets.PUSHOVER_TOKEN_BOOKING }}
+          VERCEL_BYPASS_SECRET: ${{ secrets.VERCEL_BYPASS_SECRET }}
+          ADMIN_USER:           ${{ secrets.ADMIN_USER }}
+          ADMIN_PASS:           ${{ secrets.ADMIN_PASS }}
+          PUSHOVER_USER:        ${{ secrets.PUSHOVER_USER }}
+          # Booking app — used by check-bookings.js (new admin/bookings notifications)
+          PUSHOVER_TOKEN:       ${{ secrets.PUSHOVER_TOKEN_BOOKING }}
         run: node check-bookings.js
 
       - name: Save notified-bookings cache

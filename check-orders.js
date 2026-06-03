@@ -54,6 +54,8 @@ function saveNotified(state) {
   fs.writeFileSync(NOTIFIED_FILE, JSON.stringify(state, null, 2));
 }
 
+const WC_BASE_URL = process.env.WC_BASE_URL || 'https://drift.houseofvinterberg.com';
+
 async function loginWp(chromium) {
   const wpUser = process.env.WP_USER || '';
   const wpPass = process.env.WP_PASS || '';
@@ -62,7 +64,7 @@ async function loginWp(chromium) {
   const ctx = await browser.newContext({ userAgent: config.userAgent });
   const page = await ctx.newPage();
   try {
-    await page.goto(config.site + '/wp-login.php', {
+    await page.goto(WC_BASE_URL + '/wp-login.php', {
       timeout: config.timeoutMs,
       waitUntil: 'domcontentloaded',
     });
@@ -169,7 +171,8 @@ async function fetchOrdersViaRest() {
     order: 'desc',
     status: NOTIFY_STATUSES.join(','),
   });
-  const url = config.site + '/wp-json/wc/v3/orders?' + params.toString();
+  // WP backend lever på drift.houseofvinterberg.com efter Next.js-cutover.
+  const url = WC_BASE_URL + '/wp-json/wc/v3/orders?' + params.toString();
   const auth = Buffer.from(key + ':' + secret).toString('base64');
   const res = await fetch(url, { headers: { Authorization: 'Basic ' + auth } });
   if (!res.ok) {
@@ -191,7 +194,7 @@ async function fetchOrdersViaAdminXhr(page) {
       captured.push(data);
     } catch (_) {}
   });
-  await page.goto(config.site + '/wp-admin/admin.php?page=wc-orders', {
+  await page.goto(WC_BASE_URL + '/wp-admin/admin.php?page=wc-orders', {
     timeout: config.timeoutMs,
     waitUntil: 'domcontentloaded',
   });
