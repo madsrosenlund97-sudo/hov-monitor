@@ -1,9 +1,13 @@
-// Detects new WooCommerce orders since last run and pushes a Pushover alert
-// per new order. Uses the WC REST API directly (drift.houseofvinterberg.com)
-// with consumer key/secret — no browser auth, no Playwright.
+// Detects new WooCommerce orders since last run and sends a notification per
+// new order. Uses the WC REST API directly (drift.houseofvinterberg.com) with
+// consumer key/secret - no browser auth, no Playwright.
 //
 // State: notified-orders.json (set of already-pushed order IDs).
 // First run: populate set without pushing (avoid spamming about all existing).
+//
+// Notifikations-kanaler (mindst én skal være sat):
+//   PUSHOVER_USER + PUSHOVER_TOKEN       Pushover (1 modtager pr user key)
+//   TELEGRAM_BOT_TOKEN + TELEGRAM_CHAT_ID Telegram (bot + gruppe = mange modtagere)
 //
 // Usage: node check-orders.js
 //        node check-orders.js --dry-run
@@ -11,6 +15,7 @@
 
 const fs = require('fs');
 const path = require('path');
+const { notify } = require('./notifications');
 
 (function loadEnv() {
   const envFile = path.join(__dirname, '.env');
@@ -106,29 +111,6 @@ function buildPushMessage(o) {
   return lines.join('\n');
 }
 
-async function sendPushover(title, message) {
-  const user = process.env.PUSHOVER_USER;
-  const token = process.env.PUSHOVER_TOKEN;
-  if (!user || !token) throw new Error('PUSHOVER_USER/PUSHOVER_TOKEN ikke sat');
-  const params = new URLSearchParams({
-    token,
-    user,
-    title,
-    message,
-    priority: '0',
-    sound: 'cashregister',
-  });
-  const res = await fetch('https://api.pushover.net/1/messages.json', {
-    method: 'POST',
-    headers: { 'Content-Type': 'application/x-www-form-urlencoded' },
-    body: params.toString(),
-  });
-  if (!res.ok) {
-    const txt = await res.text();
-    throw new Error('Pushover ' + res.status + ': ' + txt.slice(0, 200));
-  }
-}
-
 async function fetchOrdersViaRest() {
   // WooCommerce REST API with consumer key/secret (HTTP Basic Auth).
   // Cookie auth does NOT work for WC REST - must use dedicated API keys.
@@ -206,8 +188,8 @@ async function fetchOrdersViaRest() {
       continue;
     }
     try {
-      await sendPushover(title, message);
-      sent.push({ id: o.id, customer: o.customer, total: o.total });
+      const r = await notify({ title, message, sound: 'cashregister' });
+      sent.push({ id: o.id, customer: o.customer, total: o.total, via: r.sent, channelFailures: r.failed });
       state.ids.push(o.id);
     } catch (e) {
       failed.push({ id: o.id, error: e.message });

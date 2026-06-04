@@ -1,5 +1,5 @@
 // Detects new bookings from the new admin (Next.js + Basic Auth, behind Vercel
-// Bot Protection) and pushes a Pushover alert per new booking.
+// Bot Protection) and sends a notification per new booking.
 //
 // Replaces the old Amelia/WordPress version. Same state machine: tracks already-
 // pushed IDs in notified-bookings.json. First run populates the set without
@@ -9,13 +9,16 @@
 //   VERCEL_BYPASS_SECRET   Vercel Protection Bypass for Automation secret
 //   ADMIN_USER             Basic-Auth username (mads@houseofvinterberg.com)
 //   ADMIN_PASS             Basic-Auth password
-//   PUSHOVER_USER          Pushover user key
-//   PUSHOVER_TOKEN         Pushover app token (booking app)
+//
+// Notifikations-kanaler (mindst én skal være sat):
+//   PUSHOVER_USER + PUSHOVER_TOKEN       Pushover (1 modtager pr user key)
+//   TELEGRAM_BOT_TOKEN + TELEGRAM_CHAT_ID Telegram (bot + gruppe = mange modtagere)
 //
 // Flags: --dry-run, --force-push (testing)
 
 const fs = require('fs');
 const path = require('path');
+const { notify } = require('./notifications');
 
 (function loadEnv(){
   const envFile = path.join(__dirname, '.env');
@@ -91,25 +94,6 @@ function buildPushMessage(b){
   return lines.join('\n');
 }
 
-async function sendPushover(title, message){
-  const user = process.env.PUSHOVER_USER;
-  const token = process.env.PUSHOVER_TOKEN;
-  if (!user || !token) throw new Error('PUSHOVER_USER/PUSHOVER_TOKEN ikke sat');
-  const params = new URLSearchParams({
-    token, user, title, message,
-    priority: '0',
-    sound: 'magic',
-  });
-  const res = await fetch('https://api.pushover.net/1/messages.json', {
-    method: 'POST',
-    headers: { 'Content-Type': 'application/x-www-form-urlencoded' },
-    body: params.toString(),
-  });
-  if (!res.ok) {
-    const txt = await res.text();
-    throw new Error('Pushover ' + res.status + ': ' + txt.slice(0, 200));
-  }
-}
 
 (async () => {
   const bypass = process.env.VERCEL_BYPASS_SECRET || '';
@@ -218,8 +202,8 @@ async function sendPushover(title, message){
       continue;
     }
     try {
-      await sendPushover(title, msg);
-      result.pushed.push({ id: b.id, title });
+      const r = await notify({ title, message: msg, sound: 'magic' });
+      result.pushed.push({ id: b.id, title, sent: r.sent, channelFailures: r.failed });
     } catch(e){
       result.failures.push({ id: b.id, error: e.message });
     }

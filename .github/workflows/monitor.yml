@@ -69,8 +69,9 @@ jobs:
           # Website Alert app — used by notify.js when monitor.js detects site/booking page down
           PUSHOVER_TOKEN:      ${{ secrets.PUSHOVER_TOKEN_WEBSITE }}
           PUSHOVER_PRIORITY:   ${{ secrets.PUSHOVER_PRIORITY }}
-          TELEGRAM_BOT_TOKEN:  ${{ secrets.TELEGRAM_BOT_TOKEN }}
-          TELEGRAM_CHAT_ID:    ${{ secrets.TELEGRAM_CHAT_ID }}
+          # Telegram: web-alerts bot + group. Falder tilbage til den generelle hvis _WEBSITE ikke er sat.
+          TELEGRAM_BOT_TOKEN:  ${{ secrets.TELEGRAM_BOT_TOKEN_WEBSITE || secrets.TELEGRAM_BOT_TOKEN }}
+          TELEGRAM_CHAT_ID:    ${{ secrets.TELEGRAM_CHAT_ID_WEBSITE || secrets.TELEGRAM_CHAT_ID }}
           TWILIO_ACCOUNT_SID:  ${{ secrets.TWILIO_ACCOUNT_SID }}
           TWILIO_AUTH_TOKEN:   ${{ secrets.TWILIO_AUTH_TOKEN }}
           TWILIO_FROM:         ${{ secrets.TWILIO_FROM }}
@@ -109,6 +110,9 @@ jobs:
           PUSHOVER_USER:        ${{ secrets.PUSHOVER_USER }}
           # Booking app — used by check-bookings.js (new admin/bookings notifications)
           PUSHOVER_TOKEN:       ${{ secrets.PUSHOVER_TOKEN_BOOKING }}
+          # Telegram: sales-bot + booking-gruppe. Falder tilbage til generelle hvis _BOOKING ikke er sat.
+          TELEGRAM_BOT_TOKEN:   ${{ secrets.TELEGRAM_BOT_TOKEN_BOOKING || secrets.TELEGRAM_BOT_TOKEN }}
+          TELEGRAM_CHAT_ID:     ${{ secrets.TELEGRAM_CHAT_ID_BOOKING || secrets.TELEGRAM_CHAT_ID }}
         run: node check-bookings.js
 
       - name: Save notified-bookings cache
@@ -131,11 +135,14 @@ jobs:
         if: always()
         continue-on-error: true
         env:
-          WC_KEY:         ${{ secrets.WC_KEY }}
-          WC_SECRET:      ${{ secrets.WC_SECRET }}
-          PUSHOVER_USER:  ${{ secrets.PUSHOVER_USER }}
+          WC_KEY:             ${{ secrets.WC_KEY }}
+          WC_SECRET:          ${{ secrets.WC_SECRET }}
+          PUSHOVER_USER:      ${{ secrets.PUSHOVER_USER }}
           # Webshop app — used by check-orders.js (cha-ching at new WC orders)
-          PUSHOVER_TOKEN: ${{ secrets.PUSHOVER_TOKEN_WEBSHOP }}
+          PUSHOVER_TOKEN:     ${{ secrets.PUSHOVER_TOKEN_WEBSHOP }}
+          # Telegram: sales-bot + webshop-gruppe. Falder tilbage til generelle hvis _WEBSHOP ikke er sat.
+          TELEGRAM_BOT_TOKEN: ${{ secrets.TELEGRAM_BOT_TOKEN_WEBSHOP || secrets.TELEGRAM_BOT_TOKEN }}
+          TELEGRAM_CHAT_ID:   ${{ secrets.TELEGRAM_CHAT_ID_WEBSHOP || secrets.TELEGRAM_CHAT_ID }}
         run: node check-orders.js
 
       - name: Save notified-orders cache

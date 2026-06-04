@@ -6,7 +6,7 @@
 2. `check-bookings.js` - notifikation når der lander en ny booking i `/admin/bookings`
 3. `check-orders.js` - notifikation når der lander en ny WooCommerce-ordre
 
-Alt kører via GitHub Actions hvert 5. minut. Push leveres af Pushover (tre apps, så bookings / webshop / website kan mutes hver for sig på telefonen).
+Alt kører via GitHub Actions hvert 5. minut. Push leveres parallelt af Pushover (tre apps, så bookings / webshop / website kan mutes hver for sig på telefonen) og Telegram (bot + gruppe, så flere modtagere får samme notifikation). Begge kanaler fyrer hvis begge er konfigureret; mangler den ene springes den stille over.
 
 ## Hvad fanges af `monitor.js`
 
@@ -25,8 +25,10 @@ URL'er og tærskler ligger i `config.json`. `ignoredFirstPartyErrors` filtrerer 
 |---|---|
 | `monitor.js` | Frontend-check. Skriver JSON til stdout, eksitkode 0/1/2. |
 | `notify.js` | Læser `result.json`, holder dedup-state i `state.json`, fyrer Pushover/Telegram/Slack/Discord/Twilio/webhook hvis konfigureret. |
-| `check-bookings.js` | Scraper `/admin/bookings` på Next.js-frontenden via Basic Auth plus Vercel Protection Bypass. Pusher per ny booking. |
-| `check-orders.js` | Henter ordrer via WC REST API på `drift.houseofvinterberg.com`. Pusher per ny ordre. |
+| `notifications.js` | Fælles helper. `notify({title, message, sound})` sender til alle konfigurerede kanaler (Pushover + Telegram) parallelt. |
+| `check-bookings.js` | Scraper `/admin/bookings` på Next.js-frontenden via Basic Auth plus Vercel Protection Bypass. Pusher per ny booking via `notifications.js`. |
+| `check-orders.js` | Henter ordrer via WC REST API på `drift.houseofvinterberg.com`. Pusher per ny ordre via `notifications.js`. |
+| `get-telegram-chat-id.js` | Setup-hjælper: finder gruppe-ID til Telegram-botten. Køres én gang ved opsætning. |
 | `config.json` | URL'er, timeouts, ignored-console-patterns. |
 | `.github/workflows/monitor.yml` | Cron hvert 5. minut, kører alle tre scripts. |
 
@@ -59,9 +61,32 @@ Sættes under **Settings → Secrets and variables → Actions**.
 | `WC_KEY` | WooCommerce REST consumer key (Settings → Advanced → REST API) |
 | `WC_SECRET` | WooCommerce REST consumer secret |
 
+### Telegram (multi-modtager via gruppe-chat)
+
+Brugt af `notify.js`, `check-bookings.js` og `check-orders.js` parallelt med Pushover. Hver stream kan bruge sin egen bot + gruppe via per-stream overrides, eller dele én bot/gruppe via defaults.
+
+| Navn | Værdi |
+|---|---|
+| `TELEGRAM_BOT_TOKEN` | Default bot-token. Bruges af alle streams uden override. |
+| `TELEGRAM_CHAT_ID` | Default chat-ID. Samme regel. |
+| `TELEGRAM_BOT_TOKEN_WEBSITE` | Valgfri. Override for `notify.js` (frontend alerts). |
+| `TELEGRAM_CHAT_ID_WEBSITE` | Valgfri. Override for `notify.js`. |
+| `TELEGRAM_BOT_TOKEN_BOOKING` | Valgfri. Override for `check-bookings.js`. |
+| `TELEGRAM_CHAT_ID_BOOKING` | Valgfri. Override for `check-bookings.js`. |
+| `TELEGRAM_BOT_TOKEN_WEBSHOP` | Valgfri. Override for `check-orders.js`. |
+| `TELEGRAM_CHAT_ID_WEBSHOP` | Valgfri. Override for `check-orders.js`. |
+
+Typisk to-bot opsætning (HOV's nuværende):
+- **Bot 1** (web alerts) → `TELEGRAM_BOT_TOKEN_WEBSITE` + `TELEGRAM_CHAT_ID_WEBSITE`
+- **Bot 2** (bookings + webshop) → `TELEGRAM_BOT_TOKEN` + `TELEGRAM_CHAT_ID`
+
+Vil du dele bookings og webshop i hver sin gruppe (samme bot 2), så lader du `TELEGRAM_BOT_TOKEN` stå med bot 2's token og sætter `TELEGRAM_CHAT_ID_BOOKING` + `TELEGRAM_CHAT_ID_WEBSHOP` til hver sin gruppe.
+
+Setup-flow: opret bot via @BotFather → tilføj bot til Telegram-gruppe → send en besked i gruppen → kør `node get-telegram-chat-id.js` for at finde gruppe-ID.
+
 ### Valgfri ekstra alert-kanaler i `notify.js`
 
-`TELEGRAM_BOT_TOKEN`, `TELEGRAM_CHAT_ID`, `TWILIO_ACCOUNT_SID`, `TWILIO_AUTH_TOKEN`, `TWILIO_FROM`, `TWILIO_TO`, `SLACK_WEBHOOK_URL`, `DISCORD_WEBHOOK_URL`, `GENERIC_WEBHOOK_URL`.
+`TWILIO_ACCOUNT_SID`, `TWILIO_AUTH_TOKEN`, `TWILIO_FROM`, `TWILIO_TO`, `SLACK_WEBHOOK_URL`, `DISCORD_WEBHOOK_URL`, `GENERIC_WEBHOOK_URL`. (Telegram for `notify.js` deler `TELEGRAM_BOT_TOKEN` + `TELEGRAM_CHAT_ID` ovenfor.)
 
 ## Lokalt udvikling
 
