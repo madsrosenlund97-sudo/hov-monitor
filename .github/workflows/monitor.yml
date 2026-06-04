@@ -114,6 +114,11 @@ jobs:
           # Telegram: sales-bot + booking-gruppe. Falder tilbage til generelle hvis _BOOKING ikke er sat.
           TELEGRAM_BOT_TOKEN:   ${{ secrets.TELEGRAM_BOT_TOKEN_BOOKING || secrets.TELEGRAM_BOT_TOKEN }}
           TELEGRAM_CHAT_ID:     ${{ secrets.TELEGRAM_CHAT_ID_BOOKING || secrets.TELEGRAM_CHAT_ID }}
+          # Booking attribution lookup. Beriger notifikation med "Kilde"-linje.
+          # Hvis blanke sendes notifikation uden kildelinje.
+          BOOKING_API_URL:      ${{ secrets.BOOKING_API_URL }}
+          SUPABASE_ANON_KEY:    ${{ secrets.SUPABASE_ANON_KEY }}
+          ADMIN_TOKEN:          ${{ secrets.ADMIN_TOKEN }}
         run: |
           if [ "${{ github.event.inputs.force_push_bookings }}" = "true" ]; then
             node check-bookings.js --force-push

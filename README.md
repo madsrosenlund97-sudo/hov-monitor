@@ -45,6 +45,16 @@ Sættes under **Settings → Secrets and variables → Actions**.
 | `ADMIN_USER` | Basic-Auth bruger (typisk `mads@houseofvinterberg.com`) |
 | `ADMIN_PASS` | Basic-Auth password |
 
+### Booking-attribution lookup (valgfri)
+
+Beriger Telegram-notifikationen med en "Kilde"-linje (Organisk / Google / Meta / SoMe organisk / Andet) plus utm_source/medium/campaign hvis sat. Klassifikationen er en CommonJS-port af `src/lib/tracking/channel.ts` i frontend-repoet - hold dem i sync. Mangler en eller flere af de tre secrets, sendes notifikationen uden kildelinje.
+
+| Navn | Værdi |
+|---|---|
+| `BOOKING_API_URL` | Samme som `NEXT_PUBLIC_BOOKING_API_URL` i Vercel |
+| `SUPABASE_ANON_KEY` | Samme som `NEXT_PUBLIC_SUPABASE_ANON_KEY` i Vercel |
+| `ADMIN_TOKEN` | Samme som `ADMIN_TOKEN` i Vercel-server-env |
+
 ### WC-ordrer
 
 | Navn | Værdi |

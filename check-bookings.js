@@ -12,11 +12,17 @@
 //   TELEGRAM_BOT_TOKEN                  Sales-bot token fra @BotFather
 //   TELEGRAM_CHAT_ID                    Gruppe-ID for HOV Sales
 //
+// Valgfri env vars (uden disse sendes notifikationen uden "Kilde"-linje):
+//   BOOKING_API_URL                     Samme som NEXT_PUBLIC_BOOKING_API_URL i Vercel
+//   SUPABASE_ANON_KEY                   Samme som NEXT_PUBLIC_SUPABASE_ANON_KEY i Vercel
+//   ADMIN_TOKEN                         Samme som ADMIN_TOKEN i Vercel-server-env
+//
 // Flags: --dry-run, --force-push (testing)
 
 const fs = require('fs');
 const path = require('path');
 const { notify } = require('./notifications');
+const { classifyChannel, CHANNEL_LABEL } = require('./channel');
 
 (function loadEnv(){
   const envFile = path.join(__dirname, '.env');
@@ -84,11 +90,58 @@ function formatDanishDateTime(dt){
   return `${dayNames[dt.getDay()]}. ${dt.getDate()}. ${monthNames[dt.getMonth()]} kl. ${String(dt.getHours()).padStart(2,'0')}.${String(dt.getMinutes()).padStart(2,'0')}`;
 }
 
-function buildPushMessage(b){
+/**
+ * Henter booking-attribution fra list-bookings-edge-functionen. Bruges kun til
+ * at berige notifikationen med en "Kilde"-linje, så hvis kald fejler eller
+ * env-vars mangler returneres null og notifikationen sendes uden kildelinje.
+ */
+async function fetchBookingAttribution(id) {
+  const base = process.env.BOOKING_API_URL;
+  const anon = process.env.SUPABASE_ANON_KEY;
+  const adminToken = process.env.ADMIN_TOKEN;
+  if (!base || !anon || !adminToken) return null;
+  try {
+    const url = base.replace(/\/+$/, '') + '/list-bookings?id=' + encodeURIComponent(id);
+    const res = await fetch(url, {
+      headers: {
+        Authorization: 'Bearer ' + anon,
+        apikey: anon,
+        'x-admin-token': adminToken,
+      },
+    });
+    if (!res.ok) return null;
+    const json = await res.json();
+    return (json && json.booking && json.booking.attribution) || null;
+  } catch (_) {
+    return null;
+  }
+}
+
+/**
+ * Format kildelinjen ud fra attribution. First-touch klassificerer kanalen
+ * (matcher admin-dashboardets tile-konvention). utm_source/medium og campaign
+ * appendes som kontekst i parentes hvis sat.
+ */
+function formatSourceLine(attribution) {
+  const first = attribution && attribution.first_touch;
+  if (!first) return null;
+  const channel = classifyChannel(first);
+  const label = CHANNEL_LABEL[channel] || 'Andet';
+  const ctx = [];
+  if (first.utm_source) {
+    ctx.push(first.utm_source + (first.utm_medium ? ' / ' + first.utm_medium : ''));
+  }
+  if (first.utm_campaign) ctx.push(first.utm_campaign);
+  return 'Kilde: ' + label + (ctx.length ? ' (' + ctx.join(' · ') + ')' : '');
+}
+
+function buildPushMessage(b, attribution){
   const lines = [];
   lines.push(formatDanishDateTime(b.dt));
   lines.push(b.service);
   if (b.customerName) lines.push(b.customerName);
+  const sourceLine = formatSourceLine(attribution);
+  if (sourceLine) lines.push(sourceLine);
   return lines.join('\n');
 }
 
@@ -193,8 +246,11 @@ function buildPushMessage(b){
 
   const pushList = FORCE_PUSH ? allBookings.filter(b => b.status === 'confirmed') : toPush;
   for (const b of pushList) {
+    // Attribution-fetch er best-effort. Hvis env-vars mangler eller API'et
+    // fejler, sendes notifikationen uden kildelinje (null returneres).
+    const attribution = await fetchBookingAttribution(b.id);
     const title = 'Ny booking: ' + b.service;
-    const msg = buildPushMessage(b);
+    const msg = buildPushMessage(b, attribution);
     if (DRY_RUN) {
       result.pushed.push({ id: b.id, title, message: msg, dryRun: true });
       continue;
