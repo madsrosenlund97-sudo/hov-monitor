@@ -6,7 +6,15 @@ on:
   workflow_dispatch:         # manual trigger from Actions tab
     inputs:
       simulate_fail:
-        description: 'Simulate a failure to test alerts'
+        description: 'Simulate a failure to test alerts (Web Alerts bot)'
+        required: false
+        default: 'false'
+      force_push_bookings:
+        description: 'Re-push alle nuværende bookings én gang (tester Sales-bot via bookings)'
+        required: false
+        default: 'false'
+      force_push_orders:
+        description: 'Re-push alle nuværende ordrer én gang (tester Sales-bot via ordrer)'
         required: false
         default: 'false'
 
@@ -113,7 +121,12 @@ jobs:
           # Telegram: sales-bot + booking-gruppe. Falder tilbage til generelle hvis _BOOKING ikke er sat.
           TELEGRAM_BOT_TOKEN:   ${{ secrets.TELEGRAM_BOT_TOKEN_BOOKING || secrets.TELEGRAM_BOT_TOKEN }}
           TELEGRAM_CHAT_ID:     ${{ secrets.TELEGRAM_CHAT_ID_BOOKING || secrets.TELEGRAM_CHAT_ID }}
-        run: node check-bookings.js
+        run: |
+          if [ "${{ github.event.inputs.force_push_bookings }}" = "true" ]; then
+            node check-bookings.js --force-push
+          else
+            node check-bookings.js
+          fi
 
       - name: Save notified-bookings cache
         if: always()
@@ -143,7 +156,12 @@ jobs:
           # Telegram: sales-bot + webshop-gruppe. Falder tilbage til generelle hvis _WEBSHOP ikke er sat.
           TELEGRAM_BOT_TOKEN: ${{ secrets.TELEGRAM_BOT_TOKEN_WEBSHOP || secrets.TELEGRAM_BOT_TOKEN }}
           TELEGRAM_CHAT_ID:   ${{ secrets.TELEGRAM_CHAT_ID_WEBSHOP || secrets.TELEGRAM_CHAT_ID }}
-        run: node check-orders.js
+        run: |
+          if [ "${{ github.event.inputs.force_push_orders }}" = "true" ]; then
+            node check-orders.js --force-push
+          else
+            node check-orders.js
+          fi
 
       - name: Save notified-orders cache
         if: always()
