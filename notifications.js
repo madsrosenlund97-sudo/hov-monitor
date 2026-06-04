@@ -1,39 +1,12 @@
-// Multi-channel notification helper for check-bookings.js og check-orders.js.
+// Notification helper for check-bookings.js og check-orders.js.
 //
-// Sender til alle konfigurerede kanaler (Pushover + Telegram) parallelt.
-// En kanal regnes som "konfigureret" hvis dens env-vars er sat. Mangler de,
-// springes kanalen stille over - ingen fejl.
+// Sender til Telegram-gruppe hvis konfigureret. Telegram-bot + gruppe lader
+// flere modtagere få samme notifikation uden at dele konto.
 //
-// Konfigurer Pushover ved at sætte PUSHOVER_USER + PUSHOVER_TOKEN.
-// Konfigurer Telegram ved at sætte TELEGRAM_BOT_TOKEN + TELEGRAM_CHAT_ID.
+// Konfigurer ved at sætte TELEGRAM_BOT_TOKEN + TELEGRAM_CHAT_ID.
 //
-// notify({ title, message, sound }) returnerer { sent: [...], failed: [...] }
-// eller kaster hvis INGEN kanal er konfigureret, eller hvis ALLE forsøg fejlede.
-// "sound" rammer kun Pushover (Telegram styres af modtagerens chat-indstillinger).
-
-async function sendPushover({ title, message, sound }) {
-  const user = process.env.PUSHOVER_USER;
-  const token = process.env.PUSHOVER_TOKEN;
-  if (!user || !token) return null; // ikke konfigureret
-  const params = new URLSearchParams({
-    token,
-    user,
-    title,
-    message,
-    priority: '0',
-    sound: sound || 'pushover',
-  });
-  const res = await fetch('https://api.pushover.net/1/messages.json', {
-    method: 'POST',
-    headers: { 'Content-Type': 'application/x-www-form-urlencoded' },
-    body: params.toString(),
-  });
-  if (!res.ok) {
-    const txt = await res.text();
-    throw new Error('Pushover ' + res.status + ': ' + txt.slice(0, 200));
-  }
-  return 'pushover';
-}
+// notify({ title, message }) returnerer { sent: [...], failed: [...] } eller
+// kaster hvis Telegram ikke er konfigureret eller forsøget fejlede.
 
 function escapeHtml(s) {
   return String(s).replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;');
@@ -62,29 +35,22 @@ async function sendTelegram({ title, message }) {
   return 'telegram';
 }
 
-async function notify({ title, message, sound }) {
-  const results = await Promise.allSettled([
-    sendPushover({ title, message, sound }),
-    sendTelegram({ title, message }),
-  ]);
+async function notify({ title, message }) {
   const sent = [];
   const failed = [];
-  for (const r of results) {
-    if (r.status === 'fulfilled') {
-      if (r.value) sent.push(r.value); // null = kanal ikke konfigureret, skip stille
-    } else {
-      failed.push((r.reason && r.reason.message) || String(r.reason));
-    }
+  try {
+    const r = await sendTelegram({ title, message });
+    if (r) sent.push(r);
+  } catch (e) {
+    failed.push((e && e.message) || String(e));
   }
   if (sent.length === 0 && failed.length === 0) {
-    throw new Error(
-      'Ingen notifikations-kanaler konfigureret (sæt PUSHOVER_USER+PUSHOVER_TOKEN eller TELEGRAM_BOT_TOKEN+TELEGRAM_CHAT_ID)'
-    );
+    throw new Error('Telegram ikke konfigureret (TELEGRAM_BOT_TOKEN + TELEGRAM_CHAT_ID mangler)');
   }
   if (sent.length === 0) {
-    throw new Error('Alle kanaler fejlede: ' + failed.join('; '));
+    throw new Error('Telegram fejlede: ' + failed.join('; '));
   }
   return { sent, failed };
 }
 
-module.exports = { notify, sendPushover, sendTelegram };
+module.exports = { notify, sendTelegram };

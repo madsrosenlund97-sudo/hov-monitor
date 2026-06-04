@@ -1,18 +1,16 @@
 // Detects new bookings from the new admin (Next.js + Basic Auth, behind Vercel
-// Bot Protection) and sends a notification per new booking.
+// Bot Protection) and sends a Telegram notification per new booking.
 //
 // Replaces the old Amelia/WordPress version. Same state machine: tracks already-
 // pushed IDs in notified-bookings.json. First run populates the set without
 // pushing (avoid spam on existing). Subsequent runs push only for fresh IDs.
 //
 // Required env vars:
-//   VERCEL_BYPASS_SECRET   Vercel Protection Bypass for Automation secret
-//   ADMIN_USER             Basic-Auth username (mads@houseofvinterberg.com)
-//   ADMIN_PASS             Basic-Auth password
-//
-// Notifikations-kanaler (mindst én skal være sat):
-//   PUSHOVER_USER + PUSHOVER_TOKEN       Pushover (1 modtager pr user key)
-//   TELEGRAM_BOT_TOKEN + TELEGRAM_CHAT_ID Telegram (bot + gruppe = mange modtagere)
+//   VERCEL_BYPASS_SECRET                Vercel Protection Bypass for Automation
+//   ADMIN_USER                          Basic-Auth username (mads@houseofvinterberg.com)
+//   ADMIN_PASS                          Basic-Auth password
+//   TELEGRAM_BOT_TOKEN                  Sales-bot token fra @BotFather
+//   TELEGRAM_CHAT_ID                    Gruppe-ID for HOV Sales
 //
 // Flags: --dry-run, --force-push (testing)
 
@@ -202,7 +200,7 @@ function buildPushMessage(b){
       continue;
     }
     try {
-      const r = await notify({ title, message: msg, sound: 'magic' });
+      const r = await notify({ title, message: msg });
       result.pushed.push({ id: b.id, title, sent: r.sent, channelFailures: r.failed });
     } catch(e){
       result.failures.push({ id: b.id, error: e.message });

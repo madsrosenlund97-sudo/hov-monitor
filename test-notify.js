@@ -1,4 +1,4 @@
-// Setup-test: sender en test-notifikation til alle konfigurerede kanaler.
+// Setup-test: sender en test-notifikation via Telegram.
 // Bruger samme notify()-helper som check-bookings.js og check-orders.js.
 //
 // Default sender den med Sales-botten (TELEGRAM_BOT_TOKEN / TELEGRAM_CHAT_ID).
@@ -26,8 +26,6 @@ if (isWebsite) {
   // Override defaults med _WEBSITE-værdierne, så notify() sender til web-bot/gruppe
   if (process.env.TELEGRAM_BOT_TOKEN_WEBSITE) process.env.TELEGRAM_BOT_TOKEN = process.env.TELEGRAM_BOT_TOKEN_WEBSITE;
   if (process.env.TELEGRAM_CHAT_ID_WEBSITE) process.env.TELEGRAM_CHAT_ID = process.env.TELEGRAM_CHAT_ID_WEBSITE;
-  // Tilsvarende for Pushover
-  if (process.env.PUSHOVER_TOKEN_WEBSITE) process.env.PUSHOVER_TOKEN = process.env.PUSHOVER_TOKEN_WEBSITE;
 }
 
 const { notify } = require('./notifications');
@@ -38,9 +36,9 @@ const { notify } = require('./notifications');
     ? 'Hvis du ser denne i "HOV Web Alerts" gruppen, så virker setup\'et. Du kan slette beskeden.'
     : 'Hvis du ser denne i "HOV Sales" gruppen, så virker setup\'et. Du kan slette beskeden.';
   try {
-    const r = await notify({ title, message, sound: 'pushover' });
+    const r = await notify({ title, message });
     console.log('OK. Sendt via:', r.sent.join(', ') || '(ingen)');
-    if (r.failed.length) console.log('Fejl pr kanal:', r.failed);
+    if (r.failed.length) console.log('Fejl:', r.failed);
   } catch (e) {
     console.error('Fejl:', e.message);
     process.exit(1);

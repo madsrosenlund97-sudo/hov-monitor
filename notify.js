@@ -2,7 +2,6 @@
 // State file (state.json) is used to dedupe so you don't get spammed during outages.
 //
 // Channel ENV vars (any combination, only configured ones fire):
-//   PUSHOVER_USER + PUSHOVER_TOKEN
 //   TELEGRAM_BOT_TOKEN + TELEGRAM_CHAT_ID
 //   TWILIO_ACCOUNT_SID + TWILIO_AUTH_TOKEN + TWILIO_FROM + TWILIO_TO
 //   SLACK_WEBHOOK_URL
@@ -11,7 +10,6 @@
 //
 // Tuning:
 //   ALERT_COOLDOWN_MIN  (default 30) - minutes between repeated "still-down" alerts
-//   PUSHOVER_PRIORITY   (default 1)  - -2..2, 2 = emergency (bypasses quiet hours)
 
 const fs = require('fs');
 const path = require('path');
@@ -130,20 +128,6 @@ async function postForm(url, params, headers) {
 }
 
 const channels = {
-  async pushover(title, body) {
-    const user = process.env.PUSHOVER_USER;
-    const token = process.env.PUSHOVER_TOKEN;
-    if (!user || !token) return null;
-    const priority = process.env.PUSHOVER_PRIORITY || '1';
-    const params = { token, user, title, message: body, priority };
-    if (priority === '2') {
-      params.retry = '60';
-      params.expire = '1800';
-    }
-    await postForm('https://api.pushover.net/1/messages.json', params);
-    return 'pushover';
-  },
-
   async telegram(title, body) {
     const t = process.env.TELEGRAM_BOT_TOKEN;
     const c = process.env.TELEGRAM_CHAT_ID;
@@ -217,7 +201,7 @@ const channels = {
     }
     if (sent.length === 0 && failed.length === 0) {
       console.error(
-        'WARNING: alert fired but no channels are configured. Set at least one of PUSHOVER_*, TELEGRAM_*, TWILIO_*, SLACK_WEBHOOK_URL, DISCORD_WEBHOOK_URL, or GENERIC_WEBHOOK_URL.'
+        'WARNING: alert fired but no channels are configured. Set at least one of TELEGRAM_*, TWILIO_*, SLACK_WEBHOOK_URL, DISCORD_WEBHOOK_URL, or GENERIC_WEBHOOK_URL.'
       );
     }
     state.lastAlertTime = now.toISOString();

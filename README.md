@@ -6,7 +6,7 @@
 2. `check-bookings.js` - notifikation når der lander en ny booking i `/admin/bookings`
 3. `check-orders.js` - notifikation når der lander en ny WooCommerce-ordre
 
-Alt kører via GitHub Actions hvert 5. minut. Push leveres parallelt af Pushover (tre apps, så bookings / webshop / website kan mutes hver for sig på telefonen) og Telegram (bot + gruppe, så flere modtagere får samme notifikation). Begge kanaler fyrer hvis begge er konfigureret; mangler den ene springes den stille over.
+Alt kører via GitHub Actions hvert 5. minut. Push leveres via Telegram (bot + gruppe, så flere modtagere får samme notifikation uden delte konti).
 
 ## Hvad fanges af `monitor.js`
 
@@ -24,27 +24,18 @@ URL'er og tærskler ligger i `config.json`. `ignoredFirstPartyErrors` filtrerer 
 | Fil | Rolle |
 |---|---|
 | `monitor.js` | Frontend-check. Skriver JSON til stdout, eksitkode 0/1/2. |
-| `notify.js` | Læser `result.json`, holder dedup-state i `state.json`, fyrer Pushover/Telegram/Slack/Discord/Twilio/webhook hvis konfigureret. |
-| `notifications.js` | Fælles helper. `notify({title, message, sound})` sender til alle konfigurerede kanaler (Pushover + Telegram) parallelt. |
+| `notify.js` | Læser `result.json`, holder dedup-state i `state.json`, fyrer Telegram/Slack/Discord/Twilio/webhook hvis konfigureret. |
+| `notifications.js` | Fælles helper. `notify({title, message})` sender til Telegram-gruppe. |
 | `check-bookings.js` | Scraper `/admin/bookings` på Next.js-frontenden via Basic Auth plus Vercel Protection Bypass. Pusher per ny booking via `notifications.js`. |
 | `check-orders.js` | Henter ordrer via WC REST API på `drift.houseofvinterberg.com`. Pusher per ny ordre via `notifications.js`. |
 | `get-telegram-chat-id.js` | Setup-hjælper: finder gruppe-ID til Telegram-botten. Køres én gang ved opsætning. |
+| `test-notify.js` | Setup-test: sender en testbesked via notify(). `--website` skifter til Web Alerts-botten. |
 | `config.json` | URL'er, timeouts, ignored-console-patterns. |
 | `.github/workflows/monitor.yml` | Cron hvert 5. minut, kører alle tre scripts. |
 
 ## Secrets i GitHub Actions
 
 Sættes under **Settings → Secrets and variables → Actions**.
-
-### Pushover
-
-| Navn | Værdi |
-|---|---|
-| `PUSHOVER_USER` | User key fra pushover.net |
-| `PUSHOVER_TOKEN_WEBSITE` | App token til frontend-alerts (monitor.js) |
-| `PUSHOVER_TOKEN_BOOKING` | App token til bookings (check-bookings.js) |
-| `PUSHOVER_TOKEN_WEBSHOP` | App token til ordrer (check-orders.js) |
-| `PUSHOVER_PRIORITY` | Valgfri. `2` = emergency, default = high. |
 
 ### Bookings-scrape (Next.js admin)
 
@@ -63,7 +54,7 @@ Sættes under **Settings → Secrets and variables → Actions**.
 
 ### Telegram (multi-modtager via gruppe-chat)
 
-Brugt af `notify.js`, `check-bookings.js` og `check-orders.js` parallelt med Pushover. Hver stream kan bruge sin egen bot + gruppe via per-stream overrides, eller dele én bot/gruppe via defaults.
+Brugt af `notify.js`, `check-bookings.js` og `check-orders.js`. Hver stream kan bruge sin egen bot + gruppe via per-stream overrides, eller dele én bot/gruppe via defaults.
 
 | Navn | Værdi |
 |---|---|

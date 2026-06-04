@@ -1,13 +1,14 @@
-// Detects new WooCommerce orders since last run and sends a notification per
-// new order. Uses the WC REST API directly (drift.houseofvinterberg.com) with
-// consumer key/secret - no browser auth, no Playwright.
+// Detects new WooCommerce orders since last run and sends a Telegram notification
+// per new order. Uses the WC REST API directly (drift.houseofvinterberg.com)
+// with consumer key/secret - no browser auth, no Playwright.
 //
 // State: notified-orders.json (set of already-pushed order IDs).
 // First run: populate set without pushing (avoid spamming about all existing).
 //
-// Notifikations-kanaler (mindst én skal være sat):
-//   PUSHOVER_USER + PUSHOVER_TOKEN       Pushover (1 modtager pr user key)
-//   TELEGRAM_BOT_TOKEN + TELEGRAM_CHAT_ID Telegram (bot + gruppe = mange modtagere)
+// Required env vars:
+//   WC_KEY + WC_SECRET                  WooCommerce REST API credentials
+//   TELEGRAM_BOT_TOKEN                  Sales-bot token fra @BotFather
+//   TELEGRAM_CHAT_ID                    Gruppe-ID for HOV Sales
 //
 // Usage: node check-orders.js
 //        node check-orders.js --dry-run
@@ -188,7 +189,7 @@ async function fetchOrdersViaRest() {
       continue;
     }
     try {
-      const r = await notify({ title, message, sound: 'cashregister' });
+      const r = await notify({ title, message });
       sent.push({ id: o.id, customer: o.customer, total: o.total, via: r.sent, channelFailures: r.failed });
       state.ids.push(o.id);
     } catch (e) {
